@@ -1,297 +1,84 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 750">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 720" font-family="system-ui, sans-serif">
   <defs>
-    <!-- Gradients -->
-    <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+    <radialGradient id="hub" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
     </radialGradient>
-    <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="70%" stop-color="#10b981" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#10b981" stop-opacity="0.3"/>
-    </radialGradient>
-    <linearGradient id="spokeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
-    </linearGradient>
-
-    <!-- Glow filter -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <!-- Animated markers -->
-    <marker id="arrowPurple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#a855f7"/>
-    </marker>
-    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#10b981"/>
-    </marker>
-    <marker id="arrowBlue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6"/>
-    </marker>
-    <marker id="arrowOrange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#f97316"/>
-    </marker>
   </defs>
 
-  <style>
-    @keyframes pulse {
-      0%, 100% { opacity: 0.4; transform: scale(1); }
-      50% { opacity: 0.8; transform: scale(1.05); }
-    }
-    @keyframes pulseSlow {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 0.6; }
-    }
-    @keyframes rotate {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    @keyframes dash {
-      to { stroke-dashoffset: -20; }
-    }
-    @keyframes flowOut {
-      0% { stroke-dashoffset: 0; }
-      100% { stroke-dashoffset: -30; }
-    }
-    @keyframes flowIn {
-      0% { stroke-dashoffset: 0; }
-      100% { stroke-dashoffset: 30; }
-    }
-    @keyframes breathe {
-      0%, 100% { r: 55; }
-      50% { r: 58; }
-    }
-    .hub-glow { animation: pulse 3s ease-in-out infinite; transform-origin: center; }
-    .ring-pulse { animation: pulseSlow 4s ease-in-out infinite; }
-    .ring-dash { animation: dash 2s linear infinite; }
-    .flow-out { stroke-dasharray: 15 10; animation: flowOut 1.5s linear infinite; }
-    .flow-in { stroke-dasharray: 15 10; animation: flowIn 1.5s linear infinite; }
-    .breathe { animation: breathe 3s ease-in-out infinite; }
-    .spoke-hover:hover { filter: url(#glow); cursor: pointer; }
-  </style>
-
-  <!-- Background with subtle gradient -->
-  <rect width="900" height="750" fill="#0f172a"/>
-  <rect width="900" height="750" fill="url(#ringGlow)" opacity="0.3"/>
-
-  <!-- Grid pattern -->
-  <defs>
-    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#1e293b" stroke-width="0.5"/>
-    </pattern>
-  </defs>
-  <rect width="900" height="750" fill="url(#grid)" opacity="0.4"/>
+  <!-- Background -->
+  <rect width="900" height="720" fill="#fefcf8"/>
 
   <!-- Title -->
-  <text x="450" y="45" text-anchor="middle" font-family="system-ui, sans-serif" font-size="28" font-weight="bold" fill="#fff">Pizza Architecture</text>
-  <text x="450" y="72" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" fill="#94a3b8">Inverted, Sliced — Rings + Wedges around an Event Store</text>
+  <text x="450" y="46" text-anchor="middle" font-size="24" font-weight="700" fill="#1e1b4b">Pizza Architecture</text>
+  <text x="450" y="70" text-anchor="middle" font-size="13" fill="#64748b" font-style="italic">Inverted, sliced: three Department rings around an Event Store, cut by Desks</text>
 
-  <!-- Main wheel group centered -->
-  <g transform="translate(320, 380)">
-    <!-- Outer ring glow -->
-    <circle cx="0" cy="0" r="200" fill="none" stroke="#10b981" stroke-width="50" opacity="0.1" class="ring-pulse"/>
+  <!-- Outer crust: infrastructure boundary -->
+  <circle cx="450" cy="400" r="285" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="5,4"/>
 
-    <!-- Outer ring (Integration Infrastructure) -->
-    <circle cx="0" cy="0" r="200" fill="none" stroke="#10b981" stroke-width="3" stroke-dasharray="12 6" class="ring-dash"/>
-    <circle cx="0" cy="0" r="175" fill="none" stroke="#10b981" stroke-width="1" opacity="0.3"/>
-    <circle cx="0" cy="0" r="225" fill="none" stroke="#10b981" stroke-width="1" opacity="0.3"/>
+  <!-- QRY ring (outer Department) -->
+  <circle cx="450" cy="400" r="245" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
 
-    <!-- Infrastructure labels on ring -->
-    <g font-family="system-ui, sans-serif" font-size="11" fill="#34d399" font-weight="bold">
-      <text x="0" y="-210" text-anchor="middle">STORAGE</text>
-      <text x="155" y="-155" text-anchor="middle" transform="rotate(45, 155, -155)">EVENT BUS</text>
-      <text x="220" y="5" text-anchor="middle">MESSAGING</text>
-      <text x="155" y="165" text-anchor="middle" transform="rotate(-45, 155, 165)">TELEMETRY</text>
-      <text x="0" y="230" text-anchor="middle">CACHING</text>
-      <text x="-155" y="165" text-anchor="middle" transform="rotate(45, -155, 165)">WIRE</text>
-      <text x="-220" y="5" text-anchor="middle">HARDWARE</text>
-      <text x="-155" y="-155" text-anchor="middle" transform="rotate(-45, -155, -155)">SECURITY</text>
-    </g>
+  <!-- PRJ ring (middle Department) -->
+  <circle cx="450" cy="400" r="195" fill="#d1fae5" stroke="#059669" stroke-width="1.5"/>
 
-    <!-- Spokes (Vertical Slices) -->
-    <g id="spokes">
-      <!-- 8 spokes evenly distributed -->
-      <g class="spoke-hover">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <rect x="-50" y="-195" width="100" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-        <text x="0" y="-175" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">issue_loan</text>
-      </g>
+  <!-- CMD ring (inner Department) -->
+  <circle cx="450" cy="400" r="140" fill="#fce7f3" stroke="#be185d" stroke-width="1.5"/>
 
-      <g class="spoke-hover" transform="rotate(45)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-45) translate(115, -115)">
-          <rect x="-45" y="-16" width="90" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">return_loan</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(90)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-90) translate(175, 0)">
-          <rect x="-50" y="-16" width="100" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">renew_loan</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(135)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-135) translate(115, 115)">
-          <rect x="-40" y="-16" width="80" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">flag_overdue</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(180)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-180) translate(0, 175)">
-          <rect x="-40" y="-16" width="80" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">reserve_isbn</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(225)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-225) translate(-115, 115)">
-          <rect x="-45" y="-16" width="90" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">open_membership</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(270)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-270) translate(-175, 0)">
-          <rect x="-55" y="-16" width="110" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">register_book</text>
-        </g>
-      </g>
-
-      <g class="spoke-hover" transform="rotate(315)">
-        <line x1="0" y1="-60" x2="0" y2="-160" stroke="url(#spokeGrad)" stroke-width="10" stroke-linecap="round" filter="url(#softGlow)"/>
-        <g transform="rotate(-315) translate(-115, -115)">
-          <rect x="-50" y="-16" width="100" height="32" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="2"/>
-          <text x="0" y="4" text-anchor="middle" font-family="monospace" font-size="10" fill="#60a5fa">retire_book</text>
-        </g>
-      </g>
-    </g>
-
-    <!-- Hub glow effect -->
-    <circle cx="0" cy="0" r="80" fill="url(#hubGlow)" class="hub-glow"/>
-
-    <!-- Hub (Aggregate State) -->
-    <circle cx="0" cy="0" r="55" fill="#2d1b4e" stroke="#a855f7" stroke-width="4" filter="url(#glow)" class="breathe"/>
-    <text x="0" y="-8" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fff">EVENT</text>
-    <text x="0" y="12" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fff">STORE</text>
-    <text x="0" y="32" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#c4b5fd">(Hub)</text>
+  <!-- Wedge dividers: 8 radial dashed lines through every ring -->
+  <g stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3,3" stroke-opacity="0.55">
+    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(22.5 450 400)"/>
+    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(67.5 450 400)"/>
+    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(112.5 450 400)"/>
+    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(157.5 450 400)"/>
   </g>
 
-  <!-- Integration Components Panel -->
-  <g transform="translate(620, 130)">
-    <rect x="0" y="0" width="250" height="280" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-    <text x="125" y="28" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fff">How the Pizza Flows</text>
-    <line x1="20" y1="42" x2="230" y2="42" stroke="#334155" stroke-width="1"/>
+  <!-- Ring labels (placed at top of each ring on the centre vertical) -->
+  <text x="450" y="135" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e" letter-spacing="2.5">CRUST · INFRASTRUCTURE</text>
+  <text x="450" y="172" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a" letter-spacing="4">QRY</text>
+  <text x="450" y="222" text-anchor="middle" font-size="13" font-weight="700" fill="#065f46" letter-spacing="4">PRJ</text>
+  <text x="450" y="277" text-anchor="middle" font-size="13" font-weight="700" fill="#831843" letter-spacing="4">CMD</text>
 
-    <!-- Emitter -->
-    <g transform="translate(20, 65)">
-      <rect x="0" y="0" width="100" height="40" rx="6" fill="#7c3aed" stroke="#a855f7" stroke-width="2"/>
-      <text x="50" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#fff">CMD</text>
-      <line x1="105" y1="20" x2="140" y2="20" stroke="#a855f7" stroke-width="2" marker-end="url(#arrowPurple)" class="flow-out"/>
-      <text x="170" y="18" font-family="system-ui, sans-serif" font-size="10" fill="#c4b5fd">EVENT</text>
-      <text x="170" y="30" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">→ EVENT</text>
-    </g>
+  <!-- Hub: event store -->
+  <circle cx="450" cy="400" r="80" fill="url(#hub)" stroke="#312e81" stroke-width="2" filter="url(#soft)"/>
+  <text x="450" y="394" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">EVENT</text>
+  <text x="450" y="414" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">STORE</text>
 
-    <!-- Listener -->
-    <g transform="translate(20, 120)">
-      <rect x="0" y="0" width="100" height="40" rx="6" fill="#059669" stroke="#10b981" stroke-width="2"/>
-      <text x="50" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#fff">PRJ</text>
-      <line x1="140" y1="20" x2="105" y2="20" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)" class="flow-in"/>
-      <text x="170" y="18" font-family="system-ui, sans-serif" font-size="10" fill="#6ee7b7">EVENT</text>
-      <text x="170" y="30" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">→ READ MODEL</text>
-    </g>
-
-    <!-- Requester -->
-    <g transform="translate(20, 175)">
-      <rect x="0" y="0" width="100" height="40" rx="6" fill="#0369a1" stroke="#3b82f6" stroke-width="2"/>
-      <text x="50" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#fff">QRY</text>
-      <line x1="105" y1="20" x2="140" y2="20" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowBlue)" class="flow-out"/>
-      <text x="170" y="18" font-family="system-ui, sans-serif" font-size="10" fill="#93c5fd">serves</text>
-      <text x="170" y="30" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">QUERY</text>
-    </g>
-
-    <!-- Responder -->
-    <g transform="translate(20, 230)">
-      <rect x="0" y="0" width="100" height="40" rx="6" fill="#c2410c" stroke="#f97316" stroke-width="2"/>
-      <text x="50" y="25" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#fff">RESULT</text>
-      <line x1="140" y1="20" x2="105" y2="20" stroke="#f97316" stroke-width="2" marker-end="url(#arrowOrange)" class="flow-in"/>
-      <text x="170" y="18" font-family="system-ui, sans-serif" font-size="10" fill="#fdba74">QUERY →</text>
-      <text x="170" y="30" font-family="system-ui, sans-serif" font-size="10" fill="#94a3b8">RESPONSE</text>
-    </g>
+  <!-- Desk labels around the wedges (positioned in QRY ring, radius ~265) -->
+  <g font-size="11.5" fill="#0f172a" text-anchor="middle" font-family="monospace">
+    <!-- Wedge centres at every 45° around the wheel. Wedge 1 = north -->
+    <text x="611" y="240">return_loan</text>
+    <text x="681" y="404">renew_loan</text>
+    <text x="611" y="566">flag_overdue</text>
+    <text x="450" y="635">reserve_isbn</text>
+    <text x="289" y="566">open_membership</text>
+    <text x="219" y="404">register_book</text>
+    <text x="289" y="240">retire_book</text>
+    <text x="450" y="338" fill="#1e1b4b" font-weight="700">issue_loan</text>
   </g>
 
-  <!-- Key Principles Panel -->
-  <g transform="translate(620, 430)">
-    <rect x="0" y="0" width="250" height="200" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-    <text x="125" y="28" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" font-weight="bold" fill="#fff">Key Principles</text>
-    <line x1="20" y1="42" x2="230" y2="42" stroke="#334155" stroke-width="1"/>
-
-    <g transform="translate(20, 60)" font-family="system-ui, sans-serif" font-size="11">
-      <circle cx="8" cy="4" r="5" fill="#3b82f6"/>
-      <text x="22" y="8" fill="#fff">Spokes = Vertical Slices</text>
-
-      <circle cx="8" cy="30" r="5" fill="#a855f7"/>
-      <text x="22" y="34" fill="#fff">Hub = Event Store</text>
-
-      <circle cx="8" cy="56" r="5" fill="#10b981"/>
-      <text x="22" y="60" fill="#fff">Ring = Integration Infra</text>
-
-      <circle cx="8" cy="82" r="5" fill="#f97316"/>
-      <text x="22" y="86" fill="#fff">Names "Scream" Intent</text>
-
-      <circle cx="8" cy="108" r="5" fill="#ec4899"/>
-      <text x="22" y="112" fill="#fff">Unit of Deployment</text>
-
-      <circle cx="8" cy="134" r="5" fill="#06b6d4"/>
-      <text x="22" y="138" fill="#fff">Works with DDD/ES/CQRS</text>
-    </g>
+  <!-- Side legend -->
+  <g transform="translate(720, 145)">
+    <rect x="-5" y="-15" width="175" height="245" fill="#fafaf9" stroke="#e2e8f0" stroke-width="1" rx="4"/>
+    <text x="0" y="0" font-size="12" font-weight="700" fill="#1e1b4b">Key Principles</text>
+    <text x="0" y="22" font-size="11" fill="#334155">• Hub: Event Store</text>
+    <text x="0" y="40" font-size="11" fill="#334155">• Rings: CMD / PRJ / QRY</text>
+    <text x="0" y="58" font-size="11" fill="#334155">• Wedges: Desks (slices)</text>
+    <text x="0" y="76" font-size="11" fill="#334155">• Crust: infrastructure</text>
+    <text x="0" y="94" font-size="11" fill="#334155">• Inversion: deps inward</text>
+    <text x="0" y="112" font-size="11" fill="#334155">• Slicing: by capability</text>
+    <text x="0" y="138" font-size="12" font-weight="700" fill="#1e1b4b">Flow direction</text>
+    <text x="0" y="160" font-size="11" fill="#334155">CMD writes → store</text>
+    <text x="0" y="178" font-size="11" fill="#334155">PRJ reads ← store</text>
+    <text x="0" y="196" font-size="11" fill="#334155">QRY serves ← PRJ</text>
+    <text x="0" y="220" font-size="10.5" fill="#475569" font-style="italic">Each slice spans all three.</text>
   </g>
 
-  <!-- Legend -->
-  <g transform="translate(50, 680)">
-    <rect x="0" y="0" width="800" height="55" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-
-    <text x="400" y="20" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="#94a3b8">CRITICAL: DOSSIER ≠ DECISION</text>
-
-    <g transform="translate(60, 38)" font-family="system-ui, sans-serif" font-size="10">
-      <rect x="0" y="-10" width="60" height="20" rx="3" fill="#a855f7" opacity="0.3" stroke="#a855f7"/>
-      <text x="30" y="4" text-anchor="middle" fill="#e9d5ff">EVENT</text>
-      <text x="80" y="4" fill="#94a3b8">= identity + lifetime</text>
-
-      <rect x="230" y="-10" width="50" height="20" rx="3" fill="#10b981" opacity="0.3" stroke="#10b981"/>
-      <text x="255" y="4" text-anchor="middle" fill="#6ee7b7">EVENT</text>
-      <text x="295" y="4" fill="#94a3b8">= tag-filter query</text>
-
-      <rect x="440" y="-10" width="50" height="20" rx="3" fill="#3b82f6" opacity="0.3" stroke="#3b82f6"/>
-      <text x="465" y="4" text-anchor="middle" fill="#93c5fd">QUERY</text>
-      <text x="505" y="4" fill="#94a3b8">= present-tense verb</text>
-
-      <rect x="630" y="-10" width="80" height="20" rx="3" fill="#f97316" opacity="0.3" stroke="#f97316"/>
-      <text x="670" y="4" text-anchor="middle" fill="#fdba74">RESPONSE</text>
-      <text x="720" y="4" fill="#94a3b8">= past-tense fact</text>
-    </g>
-  </g>
-
-  <!-- Attribution -->
-  <text x="870" y="745" text-anchor="end" font-family="system-ui, sans-serif" font-size="9" fill="#475569">The Reckon Codex • Pizza Architecture</text>
+  <!-- Footer signature -->
+  <text x="870" y="710" text-anchor="end" font-size="9" fill="#94a3b8">The Reckon Codex · Pizza Architecture</text>
 </svg>

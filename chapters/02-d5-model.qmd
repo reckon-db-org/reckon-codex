@@ -81,6 +81,8 @@ The word *Dossier* is chosen carefully. It evokes a paper folder that accumulate
 
 Some Dossiers live briefly (a Loan exists for a few weeks); others span years (a Membership); some never close (a Catalogue Entry might be revised but never archived). Whatever the lifetime, the rule is *one Dossier per instance*: one Loan, one Membership, one Catalogue Entry. The stream IDs are the instance identities.
 
+![A Dossier in flight. The stream `loan-application-2024-0042` passes through three Desks (Intake, Credit, Underwrite). At each Desk a slip lands; the Dossier accumulates state from the events. The Dossier *is* the stream; the boxed fields are what each slip contributes.](../figs/dossier-metaphor.svg){#fig-dossier width="85%"}
+
 ## Why this and not the classical layers
 
 The classical layered architecture organises by mechanism: controllers, services, repositories, models. The D5 model organises by meaning: a Domain has Divisions; a Division has Departments; a Department has Desks; Desks process Dossiers.

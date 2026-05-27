@@ -62,6 +62,8 @@ The read side accepts queries, looks up answers in *read-models* (tables, indexe
 
 This split (write side that defends invariants by writing events, read side that serves queries from materialised views) is **Command Query Responsibility Segregation** [@young2010cqrs]. Greg Young articulated it in 2010 as a near-corollary of event sourcing. The two are usually deployed together; the Codex treats them as one architectural commitment under the names CMD (write side), PRJ (projection side), QRY (query side); the three Departments of @sec-pizza.
 
+![CQRS in its event-sourced form: commands flow into the Command Model, which appends to the Event Store; projections subscribe out of the store and materialise the Read Models that the Query Model serves.](../figs/cqrs-separated.svg){#fig-cqrs width="75%"}
+
 CQRS gets one objection often enough to address up front:
 
 ::: {.callout-note}
