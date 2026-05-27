@@ -1,0 +1,18 @@
+# Names that Scream {#sec-screaming}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+The names of folders, files, modules, commands, events should reveal what the system does, not how it is implemented.
+
+## What this chapter will cover
+
+- The principle: names *scream* business intent
+- The forbidden technical suffixes: `_handler`, `_manager`, `_processor`, `_service`, `_util`, `_helper`, `_impl`, `_worker`. Reasons each one fails.
+- The CRUD trap: `create_user` vs `register_user`; `update_capability` vs `amend_capability`; `delete_membership` vs `archive_membership`. Why CRUD verbs erase business meaning.
+- Event naming: past-tense, versioned, business-specific. *loan_returned_v1*, not *loan_updated*.
+- The walking-the-folders test: can a new developer learn what the Division does in two minutes by reading the folder names? If not, the names are not screaming.
+- The library's folder list as a worked example.
+- Edge cases: where technical concerns are unavoidable (NIFs, adapters, ports) and how to name them so the technical noise stays at the edges.

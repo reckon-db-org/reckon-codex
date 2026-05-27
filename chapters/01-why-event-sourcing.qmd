@@ -1,0 +1,24 @@
+# Why Event Sourcing {#sec-why}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+This chapter will argue, from first principles, that event sourcing is not a fashion or a technology choice. It is a structural commitment to *recording what happened* over *recording what is*.
+
+## What this chapter will cover
+
+- The state-update problem: why "the current state" is a brittle truth
+- Append-only logs as the only universal storage primitive that does not lie about time
+- The CQRS split: write models that defend invariants, read models that serve queries
+- The replay property: why being able to rebuild any view from events is the load-bearing claim
+- Where event sourcing is wrong: small CRUD apps, transactional ETL, anywhere the audit trail is not load-bearing
+- The Codex's stance: process-centric, with a single deployable boundary per Division and explicit integration between Divisions
+
+The chapter will not survey EventStoreDB, Axon, Marten, or other ES products. It will reference them where they sharpen a definition; the running implementation is *reckon-db* (Part II).
+
+::: {.callout-tip}
+## Reading order
+Readers who already accept event sourcing as a starting commitment can skip this chapter. Chapter 2 is the load-bearing entry point.
+:::

@@ -1,0 +1,24 @@
+# Dossiers and Decisions {#sec-dossiers}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+The Dossier handles most consistency. The Decision handles the rest.
+
+## What this chapter will cover
+
+- The Dossier as concurrency unit: stream-version optimistic concurrency, the classical pattern.
+- The 90% case: invariants that live on a single identity (a Loan, a Membership, a Catalogue Entry) are Dossier invariants.
+- The 10% case: invariants that cross identities. Uniqueness checks (an ISBN reservation cannot be claimed twice). Allocation against shared resources (a hold queue with N positions). Rate limits across an entire Domain. Idempotency keys.
+- Why the 10% case does not fit the Dossier shape: inventing a "RegistryAggregate" is ceremony; sagas are overkill for a single conditional write.
+- The **Decision** pattern: conditional append on a tag-filter context query. The consistency unit is *a query*, not *a stream version*.
+- The implementation: `evoq_decision` behaviour in evoq; `append_if_no_tag_matches/4` in reckon-db.
+- The Decision retry loop: read context → decide → conditionally append → on conflict, refresh and retry, bounded budget.
+- Reference example: ISBN-reservation uniqueness in the lending library.
+- What this chapter is NOT: a critique of aggregateless event sourcing. The aggregateless case is principled; the Codex chooses Dossier-first because processes outnumber registries by 9 to 1 in the systems we have built.
+
+## Sources
+
+The chapter draws directly on the *reckon-db DCB guide* and *evoq decisions guide* for the implementation specifics. The doctrine — Dossier as the 90% default, Decision as the escape hatch — is the Codex's contribution.

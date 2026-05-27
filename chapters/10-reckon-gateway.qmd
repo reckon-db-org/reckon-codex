@@ -1,0 +1,38 @@
+# reckon-gateway and reckon-proto {#sec-gateway}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+How polyglot clients reach the stack. The gRPC ingress (*reckon-gateway*) and the canonical wire contract (*reckon-proto*).
+
+## What this chapter will cover
+
+### reckon-proto
+
+- The single source of truth for the wire contract.
+- Ten services: `StreamService`, `SubscriptionService`, `StoresService`, `SnapshotService`, `SchemaService`, `TemporalService`, `CausationService`, `AdminService`, `HealthService`, `DcbService`.
+- The proto layout: one file per service, plus a shared file for cross-cutting types (`reckon_shared.proto`).
+- Versioning at the wire level: additive changes are minor bumps; renames are major. The 0.3.x → 0.4.x bump that added `DcbService` is the canonical example.
+- How non-Erlang consumers regenerate stubs via `buf`.
+
+### reckon-gateway
+
+- Single OCI image, three operational modes: catalogue (federates remote ReckonDB clusters), embedded (boots a local store and serves it), hybrid (both).
+- The catalogue dispatch model: every gRPC handler routes via `reckon_gateway_dispatch:call/2`, which looks up the store in the catalogue, picks a healthy member, and invokes `reckon_gater_api` via `rpc:call/4` on that member.
+- The cluster connector: Erlang dist connections to remote members, per-peer cookies, hidden-node mode for cookie-disjoint federation.
+- The configuration model: `clusters.eterm` for catalogue mode; env vars for embedded.
+- Operational concerns: health checks, telemetry, the `Admin` service for runtime ops (reload catalogue, list cluster status).
+
+### DcbService — the polyglot Decision
+
+- Two RPCs: `AppendIfNoTagMatches` and `ReadDcbContext`.
+- The `oneof { Committed | Conflict }` response shape — why conflict is *not* a gRPC error.
+- TagFilter as a recursive oneof message (match_any, match_all, conjunction, disjunction) mapping 1:1 to the Erlang term shape.
+- How `reckon-go`'s `dcb` package wraps it idiomatically: filter constructors, the `(committed, conflict, err)` return tuple, the canonical Decision loop in Go.
+- Federation behaviour: `UNIMPLEMENTED` when the backing cluster is pre-DCB. No partial-support path.
+
+## Source material
+
+reckon-gateway README + `plans/DESIGN_DCB_GRPC_SURFACE.md`, reckon-proto README + the .proto files themselves, reckon-go README + `dcb/` package source.

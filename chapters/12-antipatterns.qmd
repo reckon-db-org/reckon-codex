@@ -1,0 +1,69 @@
+# Antipatterns {#sec-antipatterns}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+A catalogue of mistakes the Codex has seen often enough to name. Each entry: the antipattern, why it is tempting, what breaks, the fix.
+
+## Coverage
+
+The chapter will collect the load-bearing antipatterns into themed sections. The categories below match the corpus's internal taxonomy; the entries here are de-mythologised — *antipatterns*, not *demons*, with clinical headings.
+
+### Event sourcing — aggregates, events, envelopes
+
+- Reading from read models during event flow (the cardinal sin: breaks replay determinism)
+- Flattening event envelopes into business data
+- Using evoq without reckon-db ("in-memory event sourcing" — there is no such thing in production)
+- Running aggregates without the aggregate behaviour
+- Manual event emission outside the aggregate
+
+### Naming — names that do not scream
+
+- CRUD verbs in event-sourced commands
+- Technical suffixes (`_handler`, `_manager`, `_processor`)
+- Parameterised phase lifecycles ("start_phase" instead of the verb-specific lifecycle)
+- Generic file names in slice folders
+
+### Structure — code organisation
+
+- Horizontal layer folders (`services/`, `repositories/`, `utils/`)
+- Process Managers nested inside Desks (PMs are sibling slices)
+- Centralised listener supervisors
+- Generic god modules
+
+### Projections — read models
+
+- Separate projections racing on a shared ETS table
+- Raw records in projections (always go through evoq envelopes)
+- Building projections without checkpoints
+- Status fields as strings instead of bit flags
+
+### Integration — subscriptions, messaging, process managers
+
+- Bridging every domain event to the mesh (domain events stay local; integration facts cross)
+- Side effects on hope, not on fact (acknowledging before confirming)
+- Silent subscription pipeline failures
+- Bypassing evoq behaviours with raw gen_servers
+- Direct dispatch across Divisions (use a PM)
+
+### Erlang / OTP — runtime gotchas
+
+- `gen_server` self-call deadlock
+- Eager defaults in `maps:get/3`
+- Containerised reckon-db with dynamic BEAM node names
+- Not draining queued ticks in idempotent fan-in workers
+
+### Release, testing, packaging
+
+- Forgetting to bump `.app.src` versions before tagging
+- Hex packages without `debug_info` (dialyzer can't see them)
+- EDoc-incompatible markdown backticks in `@doc` blocks
+- Generated `doc/` checked into the repo
+
+## Reading order
+
+Consult this chapter when something goes wrong. Read straight-through is allowed but exhausting.
+
+Each entry follows a fixed template: *Antipattern → Why it is tempting → What breaks → The fix → See also*.

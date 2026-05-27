@@ -1,0 +1,19 @@
+The Reckon Codex is dual-licensed.
+
+PROSE (Markdown sources, narrative text, diagrams)
+    Creative Commons Attribution-ShareAlike 4.0 International
+    See LICENSE-CONTENT for full terms.
+
+CODE SAMPLES (any Erlang, Go, or other source code embedded in
+              chapters, plus build scripts and CI workflows)
+    Apache License 2.0
+    See LICENSE-CODE for full terms.
+
+The split is deliberate: prose travels through citation, attribution,
+and translation; code travels through forks and patches. The licences
+match the travel patterns.
+
+Attribution: when reusing prose under CC-BY-SA, cite as
+
+    Lefever, Raf. "The Reckon Codex: No Nonsense Event Sourcing."
+    Codeberg, 2026. https://codeberg.org/reckon-db-org/reckon-codex

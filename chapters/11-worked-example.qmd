@@ -1,0 +1,60 @@
+# Worked Example: A Lending Library {#sec-library}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+A Lending Library built across two Divisions, using every load-bearing pattern in the book.
+
+## The shape of the example
+
+**Domain:** Library Services.
+
+**Divisions:**
+
+- **Catalogue Division** — knows about Books, their ISBNs, their copies.
+- **Lending Division** — knows about Loans, Members, and the lifecycle of a borrowing event.
+
+**Cross-Division integration:** when a Book is registered in Catalogue, a fact crosses to Lending so the Lending Division knows the Book is loanable.
+
+## What the chapter will walk
+
+### Catalogue Division
+
+- *register_book/* Desk — CMD, validates ISBN format, idempotency on (ISBN, copy_number).
+- *retire_book/* Desk — CMD.
+- *reserve_isbn/* Decision — uniqueness check across all reservations. Uses `evoq_decision`.
+- *query_books_by_isbn/* — QRY.
+- *book_registered_to_lending/* emitter — publishes an integration fact when a Book becomes loanable.
+
+### Lending Division
+
+- *open_membership/* Desk — CMD.
+- *issue_loan/* Desk — CMD, validates membership and loan limits.
+- *renew_loan/* Desk — CMD, validates the Loan's state.
+- *return_loan/* Desk — CMD.
+- *flag_overdue/* Desk — CMD, triggered by time.
+- *on_book_registered_track_loanable/* Process Manager — subscribes to Catalogue's integration facts, dispatches `track_loanable_book` to Lending's CMD.
+- *query_loans_by_member/*, *query_overdue_loans_page/* — QRY.
+
+### What this exercises
+
+| Pattern | Where |
+|---|---|
+| D5 model | The two-Division structure; the Desks per Division |
+| Pizza Architecture | The CMD/PRJ/QRY layout per Division; the slicing |
+| Names that scream | Every Desk folder name |
+| Dossier (stream-version concurrency) | A Loan as a Dossier; its lifecycle events |
+| Decision (tag-filter concurrency) | ISBN reservation uniqueness |
+| Command Pipelines | `issue_loan` pipeline pre-loads member loan-count |
+| Process Managers | `on_book_registered_track_loanable` |
+| Integration transports | Catalogue → Lending via mesh fact; intra-Division via pg |
+| Reckon Cycle | The example's own lifecycle (Inception through Monitoring) |
+
+### Polyglot integration
+
+The chapter closes with a Go client (using *reckon-go*) that issues a loan via gRPC, exercising the gateway end-to-end:
+
+- `c.Lending().IssueLoan(ctx, ...)` for the regular write.
+- `c.Catalogue().Dcb().Append(ctx, dcb.MatchAny("isbn:..."), -1, ...)` for the ISBN-reservation Decision, showing the `(committed, conflict, err)` return shape from Chapter 10.

@@ -1,0 +1,26 @@
+# Quarto build output
+/_book/
+/.quarto/
+
+# TeX intermediates
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.tex
+*.synctex.gz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local
+local-build/

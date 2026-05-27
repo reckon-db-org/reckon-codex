@@ -1,0 +1,25 @@
+# Pizza Architecture {#sec-pizza}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+A Division is shaped like a pizza, not an onion. The shape is the point.
+
+## What this chapter will cover
+
+- **The inverted-architecture family.** Palermo's Onion [@palermo2008onion], Cockburn's Hexagonal [@cockburn2005hexagonal], Martin's Clean Architecture [@martin2017clean]: three names for the same commitment — dependencies point inward toward a domain core. The family solved the *direction* problem.
+- **The slicing problem they missed.** Concentric rings give you one cut: horizontal, by layer. A codebase organised this way reads by layer. To understand "issuing a loan" you walk through the controller ring, the service ring, the repository ring, the data ring, the domain ring. The capability is *scattered*.
+- **The second cut.** Slice the rings vertically. Each slice is a complete capability — a Desk — that crosses every ring at once. Read the codebase by slice. To understand "issuing a loan" you open the *issue_loan/* folder and the capability is *there*, command and event and handler and projection together.
+- **The mnemonic.** A pizza has rings (crust, sauce, cheese, toppings) and slices. You serve and eat by slice; the rings are present but they are not what you cut. The image holds in your head better than any UML diagram.
+- **The CMD / PRJ / QRY layout on a pizza.** Three Departments are three rings. Desks are slices. The event store is the centre.
+- **What you give up.** Slicing means more folders. The folder count grows with capability count, not file count. Tools that prefer flat structures (some IDE search defaults, some grep workflows) need configuration. Trade made deliberately.
+
+## The figure that anchors the chapter
+
+The chapter will lead with a top-down pizza diagram: outer crust (the wire / API boundary), middle rings (CMD, PRJ, QRY), centre disc (the event store). Vertical slices cut all rings, each labelled with a Desk name from the library worked example: *issue_loan*, *return_loan*, *register_book*, *flag_overdue*.
+
+## Reference example
+
+The chapter will work through one slice of the lending library in full: *issue_loan/*. The folder contains the command record, the event record, the handler, the projection that updates the loans-by-borrower read model, and the supervisor wiring. Every artifact for one capability, in one place.

@@ -1,0 +1,50 @@
+# evoq {#sec-evoq}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+The framework on top of reckon-db. Aggregates, projections, subscriptions, snapshots — the artefacts that make a Division a Division.
+
+## What this chapter will cover
+
+### The 21 behaviours
+
+evoq is a collection of Erlang behaviours, each of which formalises one role in a Division. The chapter walks the load-bearing ones.
+
+| Behaviour | Role |
+|---|---|
+| `evoq_aggregate` | The Dossier's command-handling brain |
+| `evoq_decision` | The Decision pattern (Chapter 5) |
+| `evoq_projection` | A read-model materialiser |
+| `evoq_event_handler` | A consumer of events with retry / DLQ |
+| `evoq_process_manager` | A saga-style coordinator |
+| `evoq_adapter` | The event-store backend (`reckon_evoq` plugs reckon-db in) |
+| `evoq_subscription_adapter` | The subscription backend |
+| `evoq_snapshot_adapter` | The snapshot backend |
+| `evoq_checkpoint_store` | Where projection checkpoints live |
+
+Plus twelve more for less-frequently-extended roles (upcasters, middleware, idempotency stores, dead-letter handlers, etc.).
+
+### Why behaviours
+
+- They are the *contract*, not the *implementation*. The Codex names what each role does; the behaviour is the Erlang artefact that captures the contract.
+- Substituting one implementation for another (different backend, different retry strategy) is a one-line dependency change.
+- Compile-time enforcement of callback shape catches a class of integration bugs early.
+
+### The aggregate lifecycle
+
+Initialised → loaded from history → command received → validated → events appended → idle → passivated → re-loaded. Configurable TTL. Memory-pressure-aware passivation.
+
+### The projection contract
+
+Subscribes via the subscription adapter. Receives events in order. Updates a read model. Persists checkpoints so it can resume after a restart. Idempotent against redelivery.
+
+### The Decision runtime
+
+`evoq_decision_runtime:dispatch/3` runs the read-decide-write loop with bounded retry and exponential backoff. Cross-reference Chapter 5.
+
+## Source material
+
+evoq README, guides (`aggregates.md`, `projections.md`, `event_handlers.md`, `process_managers.md`, `decisions.md`, `state_modules.md`, `adapters.md`).

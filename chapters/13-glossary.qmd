@@ -1,0 +1,52 @@
+# Glossary {#sec-glossary .unnumbered}
+
+::: {.callout-note}
+## Chapter status
+Stub. Final glossary will follow once Chapters 1–12 are complete.
+:::
+
+Definitions for the load-bearing vocabulary in this book.
+
+----
+
+**Department**
+:   One of the three sub-units of a Division: CMD (command-side, writes events), PRJ (projection-side, builds read models), QRY (query-side, serves reads). The three are sibling deployables, not stacked layers.
+
+**Desk**
+:   A single capability inside a Department. One verb, one subject (e.g., *issue_loan*). Lives in one folder; the folder name screams the capability. Vertical slicing happens at the Desk boundary.
+
+**Decision**
+:   The write-side sibling to a Dossier. A Decision writes events conditional on a tag-filter context query rather than on a stream version. No identity, no lifetime, no folder — implemented as the `evoq_decision` behaviour. Used for cross-cutting checks (uniqueness, allocation, idempotency, rate limits).
+
+**Division**
+:   A cohesive piece of software with its own release cycle and bounded vocabulary. A bounded context, in the Evans sense. Distinct from a Domain — see *Domain*.
+
+**Domain**
+:   The whole problem space a software organisation serves. Larger than a Division. A Domain typically contains multiple Divisions. Note: DDD literature sometimes uses "domain" for what the Codex calls a Division; the Codex uses Domain only for the strategy-level container.
+
+**Dossier**
+:   The artefact that flows through Desks, accumulating events. The Dossier *is* its history; rebuilding state means replaying the events. A Loan, a Membership, a Catalogue Entry — all Dossiers. Identity carrier; concurrency unit.
+
+**Event store**
+:   The append-only log holding events. The hub at the centre of every Division's Pizza diagram. Implemented by *reckon-db*.
+
+**Pizza Architecture**
+:   A Division's structural shape: the inverted-architecture family (Onion / Hexagonal / Clean) plus orthogonal vertical slicing. Rings are CMD / PRJ / QRY; slices are Desks; the centre is the event store. See Chapter 3.
+
+**Process Manager (PM)**
+:   A subscriber to events from one Division that dispatches commands to another. Lives in the target Division's CMD Department, as a sibling slice (not nested inside a Desk). Sometimes called a saga.
+
+**Projection**
+:   A subscriber to events that materialises a read model. Lives in the PRJ Department, usually fused with QRY into a single read-side app.
+
+**Reckon Cycle**
+:   The ten-stage software lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline. See Chapter 7.
+
+**Slip**
+:   A single event inside a Dossier. The metaphor — the Dossier is a paper folder; the slips are the documents inside.
+
+**Tag filter**
+:   A recursive predicate over an event's tag set, used by Decisions to define their consistency context. Four shapes: `any_of`, `all_of`, `and_`, `or_`. See Chapter 5.
+
+**Vertical slice**
+:   A folder containing every artefact for one capability — command, event, handler, projection — together. The slicing dimension of Pizza Architecture. See Chapter 3.

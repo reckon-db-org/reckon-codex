@@ -1,0 +1,28 @@
+# reckon-db {#sec-reckon-db}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+The event store. Built on Khepri / Ra. The hub of every Division.
+
+## What this chapter will cover
+
+- The data model: stores, streams, events. Per-event metadata: id, type, version, position, tags, content types, integrity fields.
+- The append API and stream-version optimistic concurrency.
+- The Dynamic Consistency Boundary primitive: `append_if_no_tag_matches/4`. Tag filters, seq cutoffs, the `_dcb` pseudo-stream. (Cross-reference Chapter 5.)
+- Persistent subscriptions: stream-scoped, event-type-scoped, tag-scoped, payload-pattern-scoped. Delivery guarantees, checkpoints, redelivery.
+- Snapshots: when to take them, how to consume them, how the store stores them.
+- The cluster shape: Ra consensus, leader election, multi-store deployments.
+- Operational properties: telemetry, scavenging, integrity verification.
+
+## Source material
+
+The chapter draws from the reckon-db README and the existing guides (`event_sourcing.md`, `subscriptions.md`, `snapshots.md`, `cluster_consistency.md`, `dcb.md`, `temporal_queries.md`). The Codex's contribution is the doctrinal framing: *why* reckon-db is shaped the way it is, given the D5 model and the Pizza Architecture.
+
+## What this chapter is NOT
+
+- Not an API reference. Pin to the README + Hexdocs for the function-by-function reference.
+- Not an installation guide. The README covers that.
+- Not a tutorial. Chapter 11 walks the library example.

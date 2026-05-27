@@ -1,0 +1,33 @@
+# How to read this book {.unnumbered}
+
+The book has three parts. Read them in order; later parts assume the vocabulary of earlier ones.
+
+**Part I — The Pattern.** Seven short chapters establishing the vocabulary, the structural commitments, and the cycle. Read these in sequence. If you skip Chapter 2 (the D5 model) you will not understand what *Division*, *Department*, or *Dossier* means in Chapter 3, and Chapter 5 will be opaque.
+
+**Part II — The Stack.** Four chapters on the working implementation: the event store (`reckon-db`), the framework (`evoq`), the gRPC ingress (`reckon-gateway` + `reckon-proto`), and a walked-through library example. Read these when you are ready to build. Skip them if you already know the stack and want only the doctrine.
+
+**Part III — Reference.** Antipatterns and glossary. Consult, do not read straight through.
+
+## On worked examples
+
+The running case study throughout the book is a **lending library**. It is recognisable, has natural Dossiers (a *Loan*), natural Decisions (a uniqueness check on an ISBN reservation), and a real lifecycle (a book is acquired, lent, returned, eventually retired). Each chapter draws on the library for examples. Chapter 11 walks the full implementation end-to-end.
+
+The library is not toy. It exercises every load-bearing pattern in the book. If something *cannot* be modelled in the library example, it probably does not belong in the doctrine.
+
+## On code
+
+Code samples are Erlang where they touch the stack directly, Go where they cross the gateway, and pseudocode where the language would distract. Erlang readers will recognise the idioms; non-Erlang readers can read the samples as commented prose — the patterns are language-independent, the runtime happens to be the BEAM.
+
+## On opinions
+
+Where the book makes a claim that experienced practitioners may disagree with, the disagreement is named and addressed, not glossed. Look for the boxed *Counterclaim* and *Response* asides. The book does not pretend its choices are obvious. They are defensible, which is a stronger position than "obvious".
+
+## On reading time
+
+| Part | Pages (approx.) | Sitting time |
+|---|---|---|
+| I — The Pattern | 50 | 2–3 hours |
+| II — The Stack | 30 | 1–2 hours |
+| III — Reference | 20 | consult, do not read straight |
+
+The book is designed to be finishable in a long weekend. Practitioners can read Part I in a sitting, build something using Part II the following week, and return to Part III as the demons surface.

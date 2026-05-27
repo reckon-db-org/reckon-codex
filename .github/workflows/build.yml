@@ -1,0 +1,48 @@
+name: Build book
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          tinytex: true
+
+      - name: Render PDF + HTML
+        uses: quarto-dev/quarto-actions/render@v2
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reckon-codex-pdf
+          path: _book/*.pdf
+          if-no-files-found: warn
+
+      - name: Upload HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reckon-codex-html
+          path: _book/
+          if-no-files-found: warn
+
+      - name: Attach PDF to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: _book/*.pdf
+          fail_on_unmatched_files: false

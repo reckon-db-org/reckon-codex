@@ -1,0 +1,36 @@
+# Command Pipelines, Process Managers, Integration {#sec-pipelines}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+How cross-cutting concerns enter a command (pipelines), how cross-Division work coordinates (process managers), how Divisions communicate (events vs RPC vs mesh).
+
+## What this chapter will cover
+
+### Command Pipelines
+
+- The problem: cross-entity validation. A command depends on facts that live in a different Dossier (or a different Division). Reading those facts inside the aggregate is forbidden (the classic *Demon 41*: reading read-models during event flow breaks replay).
+- The cure: a **command pipeline** assembles all the cross-entity facts *before* the aggregate sees the command. The pipeline pre-loads, enriches, and passes a self-contained decision input to the aggregate.
+- Pipeline steps as named, traceable, testable units.
+- The cost: the cross-entity read can race against the underlying truth. Mitigation: idempotency keys, and the rare reconciliation pass.
+- The benefit: the aggregate stays pure, replay stays deterministic, the cross-entity decision is auditable in the event metadata.
+
+### Process Managers
+
+- When a command in Division A must trigger a command in Division B, the wrong answer is a direct call.
+- The right answer: a Process Manager subscribes to events from A and dispatches commands to B. The PM lives in B's CMD Department, in its own slice, with its own supervisor.
+- Why a sibling slice and not nested inside a Desk: PMs are discoverable at the filesystem level. An `on_loan_returned_collect_overdue_fee/` directory in the Billing Division's CMD app screams what it does.
+- Saga compensation: the PM's responsibility, not the aggregate's.
+
+### Integration Transports
+
+- *pg* (Erlang process group) for intra-Division event delivery (cheap, in-VM).
+- *mesh* (a content-addressed routing layer) for inter-Division integration facts (durable, cross-network).
+- The discipline: *domain events stay local, integration facts cross boundaries*. Never bridge all domain events to the mesh. Process Managers explicitly translate.
+- The integration-fact contract: stable shapes, explicit versioning, owned by the publishing Division.
+
+### Reference example
+
+The library's overdue-fee flow: a Loan in the Lending Division gets a *loan_overdue_v1* event; a PM in the Billing Division's CMD Department subscribes; the PM dispatches *charge_late_fee* into the Fees Dossier; on success, an *overdue_fee_charged_v1* event flows back through pg; the Lending Division's read model materialises the fee on the Loan view.

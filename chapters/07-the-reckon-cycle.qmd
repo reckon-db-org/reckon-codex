@@ -1,0 +1,36 @@
+# The Reckon Cycle {#sec-cycle}
+
+::: {.callout-note}
+## Chapter status
+Stub. Full chapter to follow in a subsequent session.
+:::
+
+Building software is a cycle, not a pipeline. The Reckon Cycle has ten stages. Each stage is a long-lived process with its own lifecycle (pending → active → paused → completed). Each stage can hand work back upstream when downstream surfaces a flaw.
+
+## The ten stages
+
+| Stage | Name | Phase | Duration |
+|---|---|---|---|
+| 1 | Inception | venture setup | short |
+| 2 | Discovery | division discovery | long |
+| 3 | Architecture | division design | long |
+| 4 | Planning | desk-level planning | long |
+| 5 | Generation | code crafting | long |
+| 6 | Testing | quality + acceptance | long |
+| 7 | Deployment | release | long |
+| 8 | Monitoring | observe in production | long |
+| 9 | Rescue | respond to incidents | long |
+| 10 | Orchestration | passive overlay, watches all 1–9 | always-on |
+
+## What this chapter will cover
+
+- Why the diagram is a **wheel**, not a pipeline. Rescue (stage 9) points back to Architecture (stage 3) when an incident reveals structural rot. The wheel turns as many times as needed.
+- Each stage is a Dossier in the meta-Division *guide_division*: a Discovery Dossier, an Architecture Dossier, a Planning Dossier, etc. Each has an explicit lifecycle (initiate → open → shelve → resume → conclude → archive).
+- The transitions between stages are themselves events: *architecture_concluded_v1* opens a Planning Dossier; *test_failed_v1* may shelve Planning and reopen Architecture.
+- The cycle is not a methodology in the SAFe / Scrum sense. It is a structural commitment: every long-lived activity is event-sourced, every transition is auditable, every reopening of a "completed" stage is recorded.
+- The *walking-skeleton doctrine*: ship an end-to-end thin slice on day one (Inception → Deployment, all ten stages exercised at toy scale) before adding features. The first sweep of the wheel happens fast and on purpose.
+- Anti-patterns: treating the wheel as a pipeline; treating stages as gates; treating Rescue as exceptional. Rescue is a stage like any other.
+
+## The wheel diagram
+
+The chapter will lead with a 10-spoke wheel diagram, with back-arrows from Rescue to Architecture, from Monitoring to Planning, from Testing to Planning. The arrows make the cyclical commitment visible.

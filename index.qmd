@@ -1,0 +1,23 @@
+# Preface {.unnumbered}
+
+This book is opinionated. It is also short.
+
+It is opinionated because event sourcing has accumulated decades of folklore, some of it load-bearing, much of it cargo-culted from a few high-profile projects. The folklore deserves to be sorted. This Codex sorts it: what is essential, what is incidental, what is wrong but persistent.
+
+It is short because the substance of event sourcing fits in a single book. The patterns are not numerous; they are interlocking. When you understand the Dossier, you understand why aggregates have edges. When you understand the Pizza, you understand why horizontal layers fail. When you understand the Cycle, you understand why architecture is not a phase. Once these click, the rest follows.
+
+The book grew out of a working software stack — *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto* — and the years of practice that shaped it. The stack ships under permissive licences. The patterns are older than the stack and will outlive it. Both are documented here.
+
+Three audiences. Practitioners adopting the stack will read for the *how*. Decision-makers evaluating it will read for the *why*. People who have read every Greg Young blog post and every Vaughn Vernon book will read for the *what now* — the parts where this Codex departs from the orthodoxy. Each chapter serves all three; the depth opens as you go.
+
+What the book is not:
+
+- It is not a tutorial. There are working examples, but the book does not march you through "your first event store, hello-world style". If you want a tutorial, the stack's READMEs cover that.
+- It is not a survey. Other patterns (CRDTs, projections-as-databases, sourcing over append-only logs in Kafka-shaped systems) are mentioned only where they sharpen our positions.
+- It is not neutral. Where there is a defensible position, the book takes one. Where there are real tradeoffs, the book names them. Where the literature is wrong, the book says so.
+
+A note on tone. The book has voice but no theatre. It will not personify the architecture or mythologise the practice. It will tell you what works, what does not, and why. If you want food for the soul, this is not your book. If you want food for the codebase, read on.
+
+---
+
+*Raf Lefever, Tienen, May 2026*

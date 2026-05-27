@@ -1,0 +1,82 @@
+project:
+  type: book
+  output-dir: _book
+
+book:
+  title: "The Reckon Codex"
+  subtitle: "No Nonsense Event Sourcing"
+  author: "Raf Lefever"
+  date: today
+  date-format: "MMMM YYYY"
+  search: true
+  repo-url: "https://codeberg.org/reckon-db-org/reckon-codex"
+  repo-actions: [edit, issue]
+  downloads: [pdf]
+  sidebar:
+    style: docked
+    background: light
+  chapters:
+    - index.qmd
+    - chapters/how-to-read.qmd
+    - part: "I — The Pattern"
+      chapters:
+        - chapters/01-why-event-sourcing.qmd
+        - chapters/02-d5-model.qmd
+        - chapters/03-pizza-architecture.qmd
+        - chapters/04-names-that-scream.qmd
+        - chapters/05-dossiers-and-decisions.qmd
+        - chapters/06-pipelines-and-process-managers.qmd
+        - chapters/07-the-reckon-cycle.qmd
+    - part: "II — The Stack"
+      chapters:
+        - chapters/08-reckon-db.qmd
+        - chapters/09-evoq.qmd
+        - chapters/10-reckon-gateway.qmd
+        - chapters/11-worked-example.qmd
+    - part: "III — Reference"
+      chapters:
+        - chapters/12-antipatterns.qmd
+        - chapters/13-glossary.qmd
+        - chapters/colophon.qmd
+
+bibliography: references.bib
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    code-copy: true
+    code-overflow: wrap
+    toc: true
+    toc-depth: 3
+  pdf:
+    documentclass: scrbook
+    classoption: [oneside, openany, 11pt]
+    geometry:
+      - paperwidth=170mm
+      - paperheight=240mm
+      - top=22mm
+      - bottom=22mm
+      - inner=22mm
+      - outer=22mm
+    fontsize: 10pt
+    linestretch: 1.15
+    lof: false
+    lot: false
+    toc-depth: 2
+    code-block-bg: "#f7f7f7"
+    code-block-border-left: "#d0d0d0"
+    include-in-header:
+      text: |
+        \usepackage{microtype}
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \fancyhead[LE,RO]{\thepage}
+        \fancyhead[RE]{\nouppercase{\leftmark}}
+        \fancyhead[LO]{\nouppercase{\rightmark}}
+
+execute:
+  echo: true
+  freeze: auto
