@@ -1,28 +1,181 @@
 # reckon-db {#sec-reckon-db}
 
-::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
-:::
+A Division has an event store at its centre. The Pizza diagram of @sec-pizza put it there for reasons that this chapter makes concrete: the event store is the *most stable thing in the system*, the source from which every read-model is derived, the bottleneck across which every write must pass to be accepted. The Codex's stack provides *reckon-db* for this role. This chapter is about what reckon-db *is*, what it *does*, and why its design choices follow from Part I's commitments.
 
-The event store. Built on Khepri / Ra. The hub of every Division.
+The chapter is not an API reference. The README at `reckon-db-org/reckon-db` is, and the Hexdocs cover function-by-function detail. This chapter explains the *shape* of the system the reader will encounter when they reach for an event store and find this one.
 
-## What this chapter will cover
+## What is at the centre
 
-- The data model: stores, streams, events. Per-event metadata: id, type, version, position, tags, content types, integrity fields.
-- The append API and stream-version optimistic concurrency.
-- The Dynamic Consistency Boundary primitive: `append_if_no_tag_matches/4`. Tag filters, seq cutoffs, the `_dcb` pseudo-stream. (Cross-reference Chapter 5.)
-- Persistent subscriptions: stream-scoped, event-type-scoped, tag-scoped, payload-pattern-scoped. Delivery guarantees, checkpoints, redelivery.
-- Snapshots: when to take them, how to consume them, how the store stores them.
-- The cluster shape: Ra consensus, leader election, multi-store deployments.
-- Operational properties: telemetry, scavenging, integrity verification.
+reckon-db is an Erlang application that stores events. *Stores* in the operational sense: writes them, reads them, replicates them, retains them, and serves them to subscribers. The interface is a small set of operations whose business semantics are the ones Part I has been describing all along.
 
-## Source material
+The library is built on **Khepri**, a Raft-replicated key-value store implemented as an Erlang application by the RabbitMQ team. Khepri is built on **Ra**, the Raft implementation library that powers RabbitMQ Streams and several other Erlang systems. Ra implements the Raft consensus algorithm [@ongaro2014raft] — replicated logs, leader election, log compaction. Khepri layers a tree-shaped data model and transactional semantics on top of Ra's log. reckon-db layers an event-store API on top of Khepri's tree.
 
-The chapter draws from the reckon-db README and the existing guides (`event_sourcing.md`, `subscriptions.md`, `snapshots.md`, `cluster_consistency.md`, `dcb.md`, `temporal_queries.md`). The Codex's contribution is the doctrinal framing: *why* reckon-db is shaped the way it is, given the D5 model and the Pizza Architecture.
+The layering matters because it explains why some things are easy and some things are constrained. Replication is easy because Ra does it. Atomicity within a single Ra log entry is easy because Khepri exposes it. Crossing multiple stores in one transaction is *not* easy, because Raft is local to a quorum group, and reckon-db respects that limit (the Codex's discipline of one event store per Division, in @sec-pizza, is partly a consequence of this constraint). Custom code inside Khepri transactions is constrained because Khepri uses the Horus extractor to package transactional logic for the leader-replica run (no `crypto:*`, no message passing, no `try/catch` inside transaction bodies). This constraint surfaces specifically in the DCB integrity implementation below.
 
-## What this chapter is NOT
+## The data model: stores, streams, events
 
-- Not an API reference. Pin to the README + Hexdocs for the function-by-function reference.
-- Not an installation guide. The README covers that.
-- Not a tutorial. Chapter 11 walks the library example.
+Three nouns. *Store* is the deployment unit — typically one per Division, sometimes more if a Division has genuinely separable concerns (e.g., a high-throughput append concern separated from a low-throughput configuration concern). A reckon-db cluster runs N stores, each replicated across the cluster's nodes by Ra. Stores are isolated; events from one store do not appear in reads from another.
+
+*Stream* is the per-Dossier append point. A Loan's stream is named `loan-018f6a7b8c9d`; the Borrower's stream is named `borrower-018f6a7b8d4a`; the Catalogue Book's stream is named `book-9780321125217`. The stream is the unit of stream-version optimistic concurrency: when an event is appended to a stream, the caller asserts the expected current version, and the store verifies it atomically.
+
+*Event* is the immutable record of one fact about the world. A reckon-db event carries:
+
+```
+event_id               -- UUID, server-generated if not supplied
+event_type             -- "loan_issued_v1", "isbn_reserved_v1", etc.
+stream_id              -- "loan-018f6a7b8c9d"
+version                -- monotonic per stream, starting at 0
+position               -- monotonic per store, global ordering
+data                   -- the business payload (JSON bytes, typically)
+metadata               -- correlation/causation/auth (JSON bytes)
+tags                   -- optional list of tag strings for cross-stream queries
+content_types          -- describing data and metadata encodings
+timestamp              -- when the store accepted the append (server clock)
+epoch_us               -- microsecond precision timestamp
+prev_event_hash        -- SHA-256 chain hash for integrity (Codex 2.1.0+)
+mac                    -- HMAC for tamper-resistance (server-side only)
+```
+
+The shape is intentional. *event_type* gives projections something to match on. *stream_id* + *version* give the stream-version concurrency primitive. *position* gives a global ordering across streams in a store, used by global reads and the catch-up subscription mechanism. *tags* allow events to participate in cross-stream queries without forcing the caller to read every stream. *prev_event_hash* and *mac* support tamper-resistance without exposing the per-store HMAC key to read clients. *timestamp* and *epoch_us* support time-based queries (@sec-reckon-db references temporal_queries.md in the reckon-db guides for the detail).
+
+The event is the unit of writing. Once written, it is *immutable* — the store has no UPDATE or DELETE primitive for events. Events that are wrong are corrected by subsequent events that describe the correction; this is the discipline of @sec-screaming (no CRUD verbs, no destructive updates) made structural in the storage layer.
+
+## The append API: stream-version concurrency
+
+The primary write operation is `reckon_db_streams:append/4` (or `/5`):
+
+```erlang
+%% Append events to a stream with optimistic concurrency control.
+%% ExpectedVersion: the version the caller believes the stream is
+%% at, OR -1 (no_stream) for "stream must not exist", OR -2
+%% (any_version) for "no concurrency check".
+reckon_db_streams:append(StoreId, StreamId, ExpectedVersion, Events) ->
+    {ok, NewVersion} | {error, {wrong_expected_version, Current, Expected}}.
+```
+
+The semantics are exactly the optimistic-concurrency story of @sec-dossiers: the caller supplies an expected version; the store either commits at that version + 1 (returning the new version) or rejects with a conflict (returning what the actual current version is, so the caller can refresh and retry).
+
+The atomicity is at the Ra log entry level. Multiple events appended in one call land at *consecutive* versions, with the precondition check and the writes both inside one entry. There is no window during which a peer can observe a partial write; the cluster either commits the whole batch or none of it.
+
+Three pre-defined sentinel values cover the common conditional-append cases without forcing the caller to read the stream first:
+
+- `-1` (no_stream): append succeeds only if the stream does not yet exist. This is how a Dossier's *birth event* (the first slip) is appended atomically — you don't have to "check first", you assert "this must be the beginning".
+- `-2` (any_version): no concurrency check. Equivalent to "fire and forget at the version level". Use sparingly; the Codex's discipline is to know what version you expect.
+- `-4` (stream_exists): append succeeds only if the stream already has events. Useful for cases where the caller wants to assert *the Dossier has been initialised* without specifying a specific version.
+
+Together with `ExpectedVersion = N`, these cover essentially every Dossier-side append scenario the Codex has encountered.
+
+## DCB: tag-filter conditional append
+
+The second write primitive is `reckon_db_streams:append_if_no_tag_matches/4`:
+
+```erlang
+reckon_db_streams:append_if_no_tag_matches(
+    StoreId, TagFilter, SeqCutoff, Events
+) ->
+    {ok, LastSeq}
+  | {error, {context_changed, MaxSeq}}
+  | {error, integrity_not_supported_in_dcb_v1}
+  | {error, term()}.
+```
+
+This is the Decision primitive of @sec-dossiers. The append succeeds only if no event matching `TagFilter` has a seq strictly greater than `SeqCutoff`. The events are written to the `_dcb` pseudo-stream (a single stream-shaped sequence per store, holding all Decision events) with their tags also mirrored into a `/by_tag/{tag}/{seq}` index for efficient filter evaluation inside the transaction.
+
+`TagFilter` is the recursive predicate defined in @sec-dossiers — `{any_of, [Tag]}`, `{all_of, [Tag]}`, `{and_, [Filter]}`, `{or_, [Filter]}` — encoded as Erlang terms. The filter is evaluated *inside* the Ra transaction, so the precondition check and the writes are atomic. Concurrent writers race; one wins; losers receive `{context_changed, MaxSeq}` and refresh their cutoff.
+
+The full implementation has subtleties worth knowing about. On integrity-enabled stores, DCB events participate in an HMAC chain (see *Integrity* below), but Khepri's Horus extractor rejects `crypto:*` calls inside transaction bodies — the chain must therefore be pre-computed *outside* the transaction, with the transaction verifying that the chain-tip + counter still match what the caller observed. Concurrent-writer contention on the chain tip is bounded by `?INTEGRITY_RETRY_BUDGET = 5` retries before surfacing `{error, dcb_concurrent_writer_exhausted}`. The implementation lives in `reckon_db_dcb.erl`; the design is documented in `plans/PLAN_DCB_IMPLEMENTATION.md` in the reckon-db repository.
+
+The two write primitives — `append/4` for Dossiers, `append_if_no_tag_matches/4` for Decisions — are the entire write surface. Everything else in reckon-db is read-side machinery or operational concerns.
+
+## Reads
+
+reckon-db offers several read shapes, each tuned to a common projection pattern.
+
+**Per-stream reads** — `read_stream_forward/4`, `read_stream_backward/4`, `stream_events_forward/4` (the last is a server-streaming variant for live tailing). These are used by aggregate frameworks rebuilding state from a single Dossier's history. The shape is "give me events from this stream, starting at this version, in this direction, with this batch size".
+
+**Cross-stream reads** — `read_by_event_types/3` returns events of one or more event types across all streams in the store; `read_by_tags/3` returns events carrying one or more tags. Both serve population-level projections (the *projections that subscribe to event types* pattern from @sec-pizza). Tags participate in two indexes: the regular per-stream tag list (built at write time, scanned at read time) and the DCB tag index (`/by_tag/{tag}/{seq}`, populated only for DCB events). The two indexes coexist; non-DCB tag reads use the per-stream tag list; DCB consistency checks use the DCB index.
+
+**Global reads** — `read_all_global/3` returns events in store-wide position order, regardless of stream. Used by emitters (the *_to_mesh* and *_to_pg* projections from @sec-pipelines) that propagate every event downstream.
+
+**Temporal reads** — `read_stream_at_timestamp/3` and friends return the state of a stream as-of a specified instant. These are expensive (linear in stream length) but invaluable for "what did the system know at time T?" queries during audit and debugging. The corpus's `temporal_queries.md` guide covers the limits.
+
+Reads are not transactional in the same sense as writes. A read returns a consistent snapshot from the Ra-replicated state at the moment the read leader serves it; concurrent writes after that moment may have committed events the read did not see. This is typical event-store behaviour and rarely a problem — projections subscribe to the firehose anyway, so the "missed" events arrive as they happen.
+
+## Subscriptions
+
+The projection side of the Pizza depends on subscriptions. A subscription is a long-lived process that consumes events from the store as they are appended, performs side effects (typically: updating a read-model), and acknowledges its progress so it can resume from the right place after a restart.
+
+reckon-db supports four subscription scopes:
+
+| Scope | Selector | Use |
+|---|---|---|
+| **stream** | one stream id | rare; usually a Dossier rebuilding itself in-memory |
+| **event_type** | one or more event type names | the common case for projections that build a typed read-model |
+| **event_pattern** | a wildcard-ish event type match | when an evolving event family shares a prefix |
+| **payload** | a function over the event's data | rare; expensive; useful for ad-hoc analytics |
+| **tags** | a tag list | when a projection is shaped by tag, not by type |
+
+Each subscription has a *checkpoint* — the position of the last event the subscriber has processed. The checkpoint is persisted by reckon-db (in a system stream), so a restarting subscriber rejoins at the right place without replay-from-zero. The Codex's discipline (covered in @sec-evoq) is that projections must be *idempotent*: a subscriber that receives the same event twice (e.g., after a crash between processing and checkpointing) must produce the same effect either way.
+
+Delivery is at-least-once. Exactly-once is not on offer — the systems that promise it almost always lie at some boundary. The projection contract (idempotent processing, persistent checkpoints) makes at-least-once safe.
+
+## Snapshots
+
+For long-lived Dossiers, rebuilding state from the full event stream on every aggregate rehydration becomes expensive. reckon-db supports per-stream *snapshots*: a periodic save of the Dossier's folded state, keyed by the stream version it represents. On rehydration, the framework reads the latest snapshot, then replays only the events after the snapshot's version.
+
+Snapshots are an optimisation, not a primary record. The events remain the truth; a snapshot can be discarded and rebuilt by replay. Snapshots also do not bypass any of the architecture's other commitments — they are not read-models, not external state, and not authoritative.
+
+The Codex's discipline for snapshots:
+
+- Take them when the rehydration cost matters and the stream grows fast enough to justify the overhead.
+- Do not take them for short-lived Dossiers; the replay cost is already low.
+- Do not take them for DCB events; the DCB pseudo-stream has no per-aggregate consistency boundary to snapshot.
+- Make snapshot schemas versioned. When the aggregate's state shape changes, old snapshots must be ignored or migrated; the Codex's recommendation is to ignore (discard and rebuild) rather than migrate.
+
+## The cluster shape
+
+A reckon-db deployment is a Ra cluster. Each node in the cluster is an Erlang VM running reckon-db (typically with one or more *stores*, each backed by its own Ra group). Stores are replicated across all nodes of the cluster; writes go through the elected leader for each store's Ra group; reads can serve from any replica (with the caveat that follower reads may lag the leader by some bounded amount).
+
+Cluster formation typically happens via *UDP multicast discovery* on a private network, or via *Kubernetes DNS* in containerised environments. The discovery mechanism finds peer nodes; Erlang dist establishes connections; Ra completes the consensus group. The discovery is operational plumbing covered in the reckon-db README; the Codex's claim is only that *the cluster is one consensus group per store*, and a Division typically has one store per cluster.
+
+Multi-store deployments are useful when different stores have different operational characteristics. A high-throughput trade-execution store may want a smaller cluster (lower latency at the cost of less geographic redundancy); a low-throughput regulatory-events store may want a wider cluster (more redundancy at the cost of higher latency). reckon-db supports both inside one deployment; each store has its own Ra group, its own leader, its own latency profile.
+
+The Codex's discipline is to *not* casually proliferate stores. One store per Division is the default; more stores only when a clear operational requirement justifies it. Each additional store is more Ra leadership to manage, more disk paths, more failure modes.
+
+## Integrity
+
+reckon-db supports tamper-resistant events on stores configured with integrity enabled. The mechanism is a per-event HMAC over the canonical encoding of the event, combined with a SHA-256 chain hash linking the event to its predecessor.
+
+Two fields on the event record carry the integrity material:
+
+- `prev_event_hash` — SHA-256 hash of the predecessor event's canonical encoding. Verifiable by any read client with a SHA-256 implementation; no shared secret required.
+- `mac` — HMAC-SHA-256 over the event's canonical encoding, keyed by the per-store integrity key. Verifiable only by parties holding the key (typically the store itself, plus operators with key access).
+
+Tampering detection works in two directions. A read client can verify the chain (each event's `prev_event_hash` matches its predecessor's hash); the store itself can verify the HMAC. An attacker who edits an event in the underlying storage will produce a chain inconsistency *and* an HMAC mismatch; the store will refuse to serve the event in either verification path.
+
+Important note: the `mac` field is *never transmitted* over the gRPC gateway. The per-store HMAC key is a secret; leaking it to read clients would defeat the symmetric-key integrity scheme. Read clients verify chain continuity (via the public `prev_event_hash`); the store verifies HMACs (via the private key). Both verifications run on read paths configured with the appropriate level of trust.
+
+The DCB primitive (above) participates in the same integrity scheme on integrity-enabled stores: DCB events also carry `prev_event_hash` and `mac`, linked into a per-store DCB chain rooted at a *genesis* hash. The Horus-extractor constraint (no `crypto:*` in transactions) means the chain values are pre-computed outside the transaction with the transaction verifying chain-tip continuity. The constraint cost is real and visible in the DCB implementation; the constraint *benefit* is that transaction bodies are extractable and replayable.
+
+## Operational concerns
+
+Several operational features matter for production deployments:
+
+**Telemetry.** reckon-db emits BEAM telemetry events for the major operations (`append`, `read`, `subscribe`, leader election, snapshot writes). The telemetry handlers are pluggable; the default ships a structured-logger handler suitable for `journalctl`. OpenTelemetry exporters are available for systems that need full observability stacks.
+
+**Scavenging.** Event-sourced systems accumulate. Some streams should be retained indefinitely (Loan histories for regulated-retention reasons); some should be scavenged after their lifecycle concludes (test-environment streams, system-stream housekeeping). reckon-db provides per-store scavenging policies that delete archived streams and reclaim disk; the corpus's `scavenging.md` guide covers the configuration.
+
+**Memory pressure.** Long-lived aggregate processes hold state in memory. Under load (many aggregates active simultaneously), the BEAM's heap pressure can become operationally relevant. reckon-db (in concert with evoq, @sec-evoq) supports adaptive aggregate TTL: aggregates passivate aggressively when memory pressure is high and idle more freely when it is low. The mechanism is invisible to user code; the operational guide in `memory_pressure.md` covers the tuning.
+
+**NIFs at the edges.** reckon-db ships Rust NIFs for hot paths (cryptographic hashing, compression, aggregation primitives, filter matching, graph algorithms). The NIFs run 3-15× faster than the pure-Erlang fallbacks and are loaded transparently when the Rust toolchain is available at build time. If the toolchain is missing (e.g., on Nerves devices without cargo), the pure-Erlang fallbacks take over; the system runs slower but correctly. This is the *crust* of the Pizza (@sec-screaming) — technical concerns at the boundary, named clearly, never leaking into the slices.
+
+## What this enables
+
+reckon-db is the *substrate* on which everything else in the stack runs. It provides:
+
+- The two consistency primitives (stream-version, tag-filter) that Part I demanded.
+- The subscription mechanism that makes projections possible.
+- The cluster shape that makes Divisions deployable.
+- The integrity mechanism that makes audit defensible.
+
+But reckon-db is intentionally low-level. It does not know about aggregates, decisions, projections-as-typed-objects, command idempotency, event upcasting, or the dozen other concerns that real Division code involves. Those concerns are the work of **evoq**, the framework that sits on top of reckon-db and turns it from a storage engine into an ergonomic platform for event-sourced systems. @sec-evoq is next.
