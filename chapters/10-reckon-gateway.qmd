@@ -1,38 +1,245 @@
 # reckon-gateway and reckon-proto {#sec-gateway}
 
+The BEAM is a comfortable runtime. The fault-tolerance story is excellent, the concurrency model is honest, the libraries described in @sec-reckon-db and @sec-evoq fit together like a glove. Not every team that wants an event store is on the BEAM.
+
+A Division can be Erlang-only — the team writes Erlang, all clients are BEAM nodes, all integration uses Erlang dist. This is the simplest case and the one Part I has implicitly assumed. The Codex's stack also covers the harder case: clients in Go, .NET, Rust, Python that need to interact with reckon-db without speaking Erlang. The bridge is two libraries — *reckon-gateway*, a gRPC ingress, and *reckon-proto*, the canonical wire contract — that together expose the full event-store surface as a polyglot API.
+
+This chapter explains both. They are best understood together because the proto contract is what the gateway implements; the gateway is what makes the proto real.
+
+## reckon-proto: the canonical wire contract
+
+reckon-proto is *only* `.proto` files. It contains no Erlang code, no Go code, no compiled artifacts. It is the source of truth for the wire shape, declared in Protocol Buffers and consumed at build time by whatever clients need stubs.
+
+The strict no-code policy is a discipline, not an accident. A repo that holds the wire contract and also holds an implementation will eventually grow features in the implementation that are not reflected in the contract — fields that exist on the Erlang side and on the Go side but not in the proto, oneofs that the Erlang side accepts but the proto does not formally declare. The drift is silent and compounds. By holding *only* the proto, the contract is forced to stay primary. Every consumer — the Erlang gateway, the Go SDK, any future SDK in Rust or Python — regenerates from the same authoritative source.
+
+The repository's structure is correspondingly austere:
+
+```
+reckon-proto/
+├── proto/
+│   ├── reckon_shared.proto       (cross-cutting types)
+│   ├── reckon_streams.proto
+│   ├── reckon_subscriptions.proto
+│   ├── reckon_stores.proto
+│   ├── reckon_snapshots.proto
+│   ├── reckon_schema.proto
+│   ├── reckon_temporal.proto
+│   ├── reckon_causation.proto
+│   ├── reckon_admin.proto
+│   ├── reckon_health.proto
+│   └── reckon_dcb.proto          (added in 0.4.0)
+├── buf.yaml
+├── buf.gen.yaml
+└── CHANGELOG.md
+```
+
+Eleven `.proto` files. One per service plus a shared file for cross-cutting types (`ProposedEvent`, `RecordedEvent`, enums). The buf configuration generates Go stubs for the reckon-go SDK; consumers in other languages add their own `buf.gen.yaml` configurations against the same `proto/` directory.
+
+Versioning is at the wire-contract level, following SemVer:
+
+- Additive changes (new fields, new messages, new services) are minor bumps. Existing clients keep working because Protocol Buffers handles unknown fields gracefully.
+- Renames, removals, and field-number changes are major bumps. They break wire compatibility.
+- Documentation-only changes are patch bumps.
+
+The 0.3.x → 0.4.x bump in 2026-05 is the canonical worked example: 0.4.0 added `DcbService` and its messages, leaving every other service untouched. Existing 0.3.x clients continue to work against 0.4.0 servers; new clients regenerate stubs to access the new service. The wire contract evolves without breaking installed software.
+
+## The ten services
+
+| Service | Purpose |
+|---|---|
+| `StreamService` | Append, read, list, delete streams; the bread-and-butter |
+| `SubscriptionService` | Persistent server-streaming subscriptions |
+| `StoresService` | Cluster topology discovery (list/get/watch stores) |
+| `SnapshotService` | Per-stream snapshot record/read/delete |
+| `SchemaService` | Schema registration + upcasting |
+| `TemporalService` | Time-travel reads (state-as-of-timestamp queries) |
+| `CausationService` | Event-provenance DAG queries |
+| `AdminService` | Store inspection, scavenging, stream links |
+| `HealthService` | Standard gRPC health probes + cluster diagnostics |
+| `DcbService` | Tag-filter conditional append (DCB; 0.4.0+) |
+
+Each service is the polyglot face of an underlying reckon-db capability. `StreamService` exposes the append and read APIs of @sec-reckon-db; `SubscriptionService` exposes the subscription mechanism; `DcbService` exposes the conditional-append primitive of @sec-dossiers. The grouping into services rather than one monolithic API is deliberate — services are independently versionable, and a client that uses only `StreamService` need not regenerate stubs when `CausationService` evolves.
+
+All per-store services accept `store_id` as a field in every request. The proto layer is multi-store-ready by construction. Stores are *emergent* in the gateway's worldview — declared by deployment, discovered via `StoresService`, not managed by the API. A new store appears in the catalogue when an operator brings it up; the gateway routes requests to it; clients discover its presence via `StoresService.ListStores`.
+
+## reckon-gateway: three modes
+
+reckon-gateway is the Erlang application that implements the proto contract. It ships as a single OCI image with three operational modes selected at boot via environment variables:
+
+| Mode | `STORE_ENABLED` | `CLUSTERS_PATH` | Use |
+|---|---|---|---|
+| **Catalogue** | false (default) | set | Federate N remote ReckonDB clusters over one gRPC endpoint. The gateway holds no data; every request routes to the cluster owning the target store. |
+| **Embedded** | true | unset | One container = one ReckonDB store, served over gRPC. The gateway boots a local reckon-db and serves it directly. |
+| **Hybrid** | true | set | Both. A local store *and* federated remote stores from the same endpoint. |
+
+The same binary serves all three modes; the difference is configuration. This matters operationally: a team that starts with a single embedded store and later expands to a federated topology does not change images, only environment variables.
+
+**Catalogue mode** is the most common deployment for organisations with multiple ReckonDB clusters (one per Division, typically). The gateway sits in front of all of them and presents one gRPC endpoint to clients. Clients do not need to know which cluster owns which store; the catalogue handles the lookup.
+
+**Embedded mode** is the simplest deployment. A single container holds one reckon-db store and exposes it over gRPC. Useful for development, for small production systems, for the walking-skeleton (@sec-cycle) phase before clustering matters.
+
+**Hybrid mode** combines them. A team running a local store may also want to federate against remote stores (perhaps for cross-Division integration, perhaps for testing against staging clusters). The same gateway instance serves both.
+
+## Catalogue dispatch
+
+Catalogue mode is structurally interesting. The gateway holds no data and replicates none; every request to a store-touching service must route to a backing cluster. The mechanism is straightforward but worth seeing:
+
+```
+gRPC client
+   │
+   │ AppendEventsRequest { store_id: "lending", stream_id: "loan-1", ... }
+   ▼
+reckon_gateway_stream_service:append_events/2
+   │
+   │ dispatch:call(append_events, [lending, "loan-1", ExpectedVersion, Events])
+   ▼
+reckon_gateway_dispatch:call/2
+   │
+   │ 1. catalogue:lookup(lending) → {ok, ClusterId, Members, ApiModule}
+   │ 2. pick_member(Members) → {ok, Member}
+   │ 3. rpc:call(Member, reckon_gater_api, append_events, Args)
+   ▼
+reckon_gater_api on the chosen backing node
+   │
+   ▼
+reckon_db_streams:append/4 on the Ra leader for the lending store
+```
+
+Five hops, three of them are RPC. The gateway's job is the catalogue lookup and the Erlang-dist hop into the backing cluster. The backing cluster's job is the actual store operation. Errors at each hop are surfaced as appropriate gRPC status codes — `store_unknown` → `NOT_FOUND`, `cluster_unavailable` → `UNAVAILABLE`, `{rpc_failed, _}` → `INTERNAL`.
+
+The catalogue itself is configured by an Erlang term file (`clusters.eterm`) that lists each known cluster, its member nodes, the Erlang cookie used to reach it, and the API module exposed by its gateway-facing process. The file is operator-curated, mounted into the container, and reloaded on demand via `AdminService.ReloadCatalogue`. New clusters are added by editing the file and triggering a reload; no restart required.
+
+## The cluster connector
+
+The gateway needs to talk to remote BEAM nodes — clusters running reckon-db, reachable over Erlang distribution. The mechanics are non-trivial because each cluster may use a different cookie (Erlang's lightweight authentication primitive), and the cookies must remain isolated from each other.
+
+Pre-OTP-25, this was awkward — a single BEAM node had one cookie, full stop. OTP 25+ supports per-peer cookies via `erlang:set_cookie(Node, Cookie)`. The gateway uses this: for each cluster the catalogue knows about, the gateway sets the appropriate cookie on each member node before attempting to connect. The cookies stay private to their respective clusters; an attacker who compromises one cluster's cookie cannot reach the others.
+
+The gateway also boots with the `-hidden` BEAM flag in catalogue and embedded-single deployments. A *hidden node* in Erlang's dist model is one that does not propagate cluster membership through transitive connection — it appears as a peer to its direct dials but is invisible to peers' `nodes/0` and to OTP's `pg` (process-group) registry. This is critical for catalogue mode: if the gateway joined every backing cluster's pg scope, the clusters would inadvertently see each other's process groups through the gateway bridge, and isolation would silently break. `-hidden` prevents the leakage.
+
+The `-hidden` flag is operator-controlled via the `RECKON_GATEWAY_DIST_HIDDEN_FLAG` environment variable. Use it when:
+
+- Federating cookie-disjoint clusters (catalogue or hybrid modes).
+- Running an embedded `STORE_MODE=single` deployment.
+
+*Do not* use `-hidden` when:
+
+- Running embedded `STORE_MODE=cluster` deployments (the gateway containers are themselves Ra quorum peers; they need mutual pg visibility to participate in the consensus group).
+
+The constraint is one of the operational details that running multi-cluster federations requires understanding. The corpus documents it in detail; the Codex's claim is only that the abstraction is sound — clusters stay isolated, the gateway federates without bridging.
+
+## DcbService — polyglot Decisions
+
+The Decision pattern of @sec-dossiers extends to polyglot clients via `DcbService`, added in reckon-proto 0.4.0 / reckon-gateway 0.7.0. Two RPCs:
+
+- `AppendIfNoTagMatches(AppendIfNoTagMatchesRequest)` — conditional append. The cross-stream concurrency primitive over the wire.
+- `ReadDcbContext(ReadDcbContextRequest)` — read events matching a tag filter from the DCB pseudo-stream, ordered by seq, with the highest observed seq returned alongside.
+
+The interesting design choice is the response shape of `AppendIfNoTagMatches`. The naïve choice would be: success returns the new sequence; conflict returns a gRPC error status. The Codex chooses differently:
+
+```protobuf
+message AppendIfNoTagMatchesResponse {
+  oneof result {
+    Committed committed = 1;
+    Conflict  conflict  = 2;
+  }
+}
+
+message Committed { uint64 last_seq = 1; }
+message Conflict  { uint64 max_seq  = 1; }
+```
+
+Both `Committed` and `Conflict` are *response shapes for a successful gRPC call*. The gateway evaluated the request; it ran the filter; it either committed the events or refused them. The refusal is a *structured outcome*, not an error. The client extracts whichever variant is present and proceeds accordingly.
+
+The reason is semantic. A gRPC error implies *something is wrong*: the transport failed, the backend crashed, the request was malformed. A DCB conflict is none of those — it is the system working exactly as designed, telling the client "your context is stale, here is the new maximum". Mapping a conflict to `ABORTED` or `FAILED_PRECONDITION` would force every client to handle a status-code branch the same way it would handle a network failure, which is not how the application logic should be shaped.
+
+gRPC status codes stay reserved for genuine errors: `UNAVAILABLE` when the cluster cannot serve the request, `UNIMPLEMENTED` when the backing cluster predates DCB, `INTERNAL` for unexpected failures, `INVALID_ARGUMENT` for malformed input.
+
 ::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
+## Counterclaim and response
+
+**Counterclaim:** *Surfacing structured outcomes inside the response body breaks the standard gRPC error-handling pattern. Tools, retry libraries, and dashboards expect errors in the status code; putting conflicts in the body hides them.*
+
+**Response:** The conflict is not an error. Putting it in the status code would *mislabel* the outcome, not preserve the convention. Standard tools — retry libraries especially — would treat the conflict as an error and retry it indefinitely, which is precisely the wrong behaviour for a context-changed conflict (the right behaviour is to refresh the context with `ReadDcbContext` and retry from there, possibly with a different filter or cutoff). The oneof-in-body design forces clients to write the correct retry shape, which is the desired outcome.
+
+For dashboards and observability, the gateway emits structured telemetry on both committed and conflicted writes; the conflict rate is measurable and alertable through the normal channels, just not via gRPC error rate metrics.
 :::
 
-How polyglot clients reach the stack. The gRPC ingress (*reckon-gateway*) and the canonical wire contract (*reckon-proto*).
+The Go SDK wraps this idiomatically:
 
-## What this chapter will cover
+```go
+committed, conflict, err := client.Dcb("orders").Append(ctx,
+    dcb.MatchAny("slot:42"),
+    seqCutoff,
+    []dcb.ProposedEvent{...},
+)
+switch {
+case err != nil:
+    // transport / backend failure: retry, alert, etc.
+case conflict != nil:
+    // context stale: refresh and retry the loop
+case committed != nil:
+    // success: committed.LastSeq is the new cutoff for follow-ups
+}
+```
 
-### reckon-proto
+Three-value returns from one call are unusual in Go but the alternatives (a struct with two pointers, a sentinel error type) all force the caller into worse switch statements. The three-value shape makes the three cases explicit and impossible to forget.
 
-- The single source of truth for the wire contract.
-- Ten services: `StreamService`, `SubscriptionService`, `StoresService`, `SnapshotService`, `SchemaService`, `TemporalService`, `CausationService`, `AdminService`, `HealthService`, `DcbService`.
-- The proto layout: one file per service, plus a shared file for cross-cutting types (`reckon_shared.proto`).
-- Versioning at the wire level: additive changes are minor bumps; renames are major. The 0.3.x → 0.4.x bump that added `DcbService` is the canonical example.
-- How non-Erlang consumers regenerate stubs via `buf`.
+## TagFilter as recursive oneof
 
-### reckon-gateway
+The TagFilter (defined in @sec-dossiers as the Decision's consistency context) is a recursive predicate over an event's tag set. Encoding it in Protocol Buffers takes some care because the oneof construct does not naturally support recursion. The proto definition:
 
-- Single OCI image, three operational modes: catalogue (federates remote ReckonDB clusters), embedded (boots a local store and serves it), hybrid (both).
-- The catalogue dispatch model: every gRPC handler routes via `reckon_gateway_dispatch:call/2`, which looks up the store in the catalogue, picks a healthy member, and invokes `reckon_gater_api` via `rpc:call/4` on that member.
-- The cluster connector: Erlang dist connections to remote members, per-peer cookies, hidden-node mode for cookie-disjoint federation.
-- The configuration model: `clusters.eterm` for catalogue mode; env vars for embedded.
-- Operational concerns: health checks, telemetry, the `Admin` service for runtime ops (reload catalogue, list cluster status).
+```protobuf
+message TagFilter {
+  oneof kind {
+    TagList    match_any   = 1;   // ANY of these tags
+    TagList    match_all   = 2;   // ALL of these tags
+    FilterList conjunction = 3;   // ALL of these sub-filters
+    FilterList disjunction = 4;   // ANY of these sub-filters
+  }
+}
 
-### DcbService — the polyglot Decision
+message TagList    { repeated string tags = 1; }
+message FilterList { repeated TagFilter filters = 1; }
+```
 
-- Two RPCs: `AppendIfNoTagMatches` and `ReadDcbContext`.
-- The `oneof { Committed | Conflict }` response shape — why conflict is *not* a gRPC error.
-- TagFilter as a recursive oneof message (match_any, match_all, conjunction, disjunction) mapping 1:1 to the Erlang term shape.
-- How `reckon-go`'s `dcb` package wraps it idiomatically: filter constructors, the `(committed, conflict, err)` return tuple, the canonical Decision loop in Go.
-- Federation behaviour: `UNIMPLEMENTED` when the backing cluster is pre-DCB. No partial-support path.
+`FilterList` contains repeated `TagFilter` messages, achieving the recursion. The mapping to the Erlang term shape is one-to-one:
 
-## Source material
+| Proto shape | Erlang term |
+|---|---|
+| `match_any: TagList { tags: ["a","b"] }` | `{any_of, [<<"a">>, <<"b">>]}` |
+| `match_all: TagList { tags: ["x"] }` | `{all_of, [<<"x">>]}` |
+| `conjunction: FilterList { filters: [F1, F2] }` | `{and_, [F1', F2']}` |
+| `disjunction: FilterList { filters: [F1, F2] }` | `{or_, [F1', F2']}` |
 
-reckon-gateway README + `plans/DESIGN_DCB_GRPC_SURFACE.md`, reckon-proto README + the .proto files themselves, reckon-go README + `dcb/` package source.
+The names `conjunction` and `disjunction` are deliberate. The obvious alternatives — `and` and `or` — are reserved words in several languages (Python, JavaScript, C#). The proto field names propagate through generated code; using reserved words would force every generated client to escape them. `conjunction`/`disjunction` are unreserved, unambiguous, and (for the small price of being slightly more verbose) work cleanly in every language.
+
+The gateway's Erlang code does the round-trip translation at the boundary. Inbound: the protobuf `TagFilter` becomes an Erlang tag-filter term via `reckon_gateway_dcb_service:decode_filter/1`. Outbound: structured responses are encoded back to protobuf shapes. The bridge is a few dozen lines of code; the encoding is mechanical; the discipline is to keep the term-shape and the wire-shape semantically identical, so the Erlang documentation and the gRPC documentation can describe the same concepts in the same words.
+
+## Federation behaviour
+
+A catalogue-mode gateway federates many backing clusters. Different backing clusters may run different versions of reckon-db. The gateway must handle this gracefully without coupling all backing clusters to lock-step upgrades.
+
+The discipline: **the gateway routes requests to the backing cluster's gateway-API; if the backing cluster predates a feature, the call surfaces as `UNIMPLEMENTED`**. No partial-support fallback path; no capability negotiation; no probing.
+
+In practice, this means a `DcbService` call against a store hosted on a pre-DCB cluster (reckon-db < 3.1.1) receives gRPC `UNIMPLEMENTED` with a message naming the cluster's version. The client knows to either upgrade that backing cluster or stop using DCB against it. There is *not* a fallback to non-DCB behaviour; failing closed is the correct semantics because DCB callers depend on the conditional-append precondition being checked. Silently degrading to unconditional append would be a correctness bug.
+
+The same principle applies to any future feature additions: new RPCs come with `UNIMPLEMENTED` for backing clusters that lack them; operators upgrade the backings explicitly; the gateway does not paper over version mismatches.
+
+## Operational concerns
+
+A few items deserve mention even in a Codex chapter:
+
+**Health checks.** Standard gRPC health checking (the `grpc.health.v1.Health` service, exposed through `HealthService`) gives liveness and readiness probes for orchestrators (Kubernetes, systemd, etc.). Beyond standard health, `HealthService.GetClusterDiagnostics` returns per-cluster state: leader nodes, quorum membership, term, last commit position. Useful in catalogue mode where the gateway sees many backing clusters and operators want one place to check them all.
+
+**Telemetry.** The gateway emits structured logs for every RPC at INFO level, with the operation name, status code, and duration. Errors at WARNING level. Internal failures at ERROR. The default handler is `logger`; OpenTelemetry can be enabled via configuration.
+
+**Hidden-node misconfiguration.** The most common operational pitfall in catalogue mode is *forgetting* `RECKON_GATEWAY_DIST_HIDDEN_FLAG=-hidden`. Without the flag, the gateway joins each backing cluster's pg scope, the clusters silently leak processes to each other, and apparently-routine operations (a `pg:join` in cluster A) trigger surprising effects in cluster B. The Codex's discipline: in catalogue and embedded-single modes, set the flag explicitly; treat its absence as a configuration error.
+
+**Image versioning.** `:latest` for unattended dev environments; pinned semver tags (`:0.7.0`) for production. Image labels include the build commit so operators can correlate running containers with source-tree state.
+
+## What this enables
+
+The gateway and the proto contract together extend the stack's reach beyond the BEAM. A Go service can write to a Loan Dossier via `StreamService.AppendEvents`; a Python analytics script can subscribe to events via `SubscriptionService.StreamEventsForward`; a Rust microservice can issue Decisions via `DcbService.AppendIfNoTagMatches`. The polyglot frontier closes; the same patterns of Part I — Dossiers, Decisions, Pizza Architecture, screaming names — apply in any language with a gRPC stub generator.
+
+What remains is to see it all in motion. The next chapter walks a complete worked example — a lending library, built across two Divisions, using every load-bearing pattern from Parts I and II. @sec-library is where the book stops describing and starts demonstrating.
