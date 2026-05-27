@@ -15,7 +15,7 @@ Scaffolding stage. Chapter 2 (the D5 model) is the gold-standard reference for t
 | Part | Chapter | Status |
 |---|---|---|
 | Front | Preface, How to read this book | ✅ drafted |
-| I | 1. Why event sourcing | stub |
+| I | 1. Why event sourcing | ✅ first cut |
 | I | 2. The D5 model | ✅ first cut |
 | I | 3. Pizza Architecture | ✅ first cut |
 | I | 4. Names that scream | ✅ first cut |
