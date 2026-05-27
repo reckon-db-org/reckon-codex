@@ -50,11 +50,9 @@ That is the architecture. Concentric rings (the Departments: CMD, PRJ, QRY aroun
 
 Why a pizza and not, say, a wagon-wheel? Because a wheel has spokes, not slices, and the spokes do not *contain* the rings; they cross them but they are not made of them. A pizza wedge *is* the rings, locally, from crust to toppings. The wedge is not an addition to the rings; it is a viewing angle on them. That is the architecture exactly.
 
-::: {.callout-tip}
-## Figure 3.1; A Division in cross-section
+![Pizza Architecture in cross-section. Hub: the event store. Outer ring: the crust where infrastructure concerns live (wire, storage, telemetry, security, and so on). Radial wedges: the Desks, each a complete capability spanning every ring. Library example shown: issue_loan, return_loan, renew_loan, flag_overdue, reserve_isbn, open_membership, register_book, retire_book.](../figs/pizza-architecture.svg){#fig-pizza width="90%"}
 
-The canonical Pizza Architecture diagram (a top-down pizza with concentric rings labelled CMD, PRJ, QRY around a central disc labelled *event store*, with radial wedges labelled with Desk names from the library example) will land in `figs/pizza-architecture.svg` in a future revision. Until then, hold the image in your head: rings + radial cuts, both visible from the same angle.
-:::
+The hub is the event store. The outer ring carries the infrastructure concerns that touch the world (the *crust* of the pizza, where the technical names of @sec-screaming live). Between hub and crust sit the rings that the chapter has been describing: CMD writes into the hub, PRJ subscribes out of it, QRY serves from the read-models PRJ materialises. The radial wedges are Desks; each crosses every ring once and contains every artefact for one capability.
 
 A note on the name. *Pizza Architecture* is unserious-sounding and the Codex picks it deliberately. The book wears its voice on its title page (*No Nonsense Event Sourcing*) and has earned the right to a memorable name where a generic one would do. Onion already crossed the food-metaphor line. *Spaghetti code*, *lasagna code*, *ravioli code*; the line was crossed by precedent. Pizza extends a tradition; it does not break one. Decision-makers who would dismiss a pattern called Pizza are dismissing the substance behind it as well, and the substance (the inversion plus the slicing) is what matters. We will spend the rest of the chapter on substance and not return to defending the name.
 

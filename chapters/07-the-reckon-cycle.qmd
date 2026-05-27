@@ -28,11 +28,9 @@ The arrows that matter:
 
 The forward arrows (Inception → Discovery → Architecture → Planning → Generation → Testing → Deployment → Monitoring → Rescue) describe the *primary* direction of work. The back-arrows are not exceptions; they are part of how the wheel turns. A team that has no back-arrows is one of two things: very new (the back-arrows have not happened yet) or very dishonest (the back-arrows happen and get hidden). Honest teams record their back-arrows. Honest cycles are recordable.
 
-::: {.callout-tip}
-## Figure 7.1; The Reckon Cycle
+![The Reckon Cycle. Eight stages on the rim (Discovery through Rescue), Orchestration as the hub overlay. Inception (stage 0) is implicit upstream of Discovery; in practice it is whatever spark triggers a new entry into the cycle. The wheel turns as many times as the work demands.](../figs/reckon-cycle.svg){#fig-cycle width="90%"}
 
-The canonical wheel diagram (ten spokes labelled Inception through Orchestration, clockwise arrows along the rim, named back-arrows from Rescue/Monitoring/Testing inward, Orchestration drawn as a hub overlay rather than a position on the rim) will land in `figs/reckon-cycle.svg` in a future revision. For now: imagine a ten-spoke wheel with documented back-arrows. The wheel turns as many times as the work demands.
-:::
+The eight numbered nodes on the rim show the bulk of the build work. Inception is left off the rim because it is one-shot per Domain entry: the moment a problem is named, the moment a Division is chartered, the moment a brief is written down. After Inception, the cycle takes over and turns. Orchestration sits at the hub because it is the always-on overlay that watches all the other stages and surfaces anomalies. The forward arrows along the rim show the primary direction of work; the back-arrows in the chapter prose (Rescue→Architecture, Monitoring→Planning, Testing→Generation) are the reason this is a wheel and not a pipeline.
 
 ## Each stage is a Dossier
 
