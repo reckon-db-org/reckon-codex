@@ -1,25 +1,184 @@
 # Pizza Architecture {#sec-pizza}
 
-::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
+The inverted-architecture family solved a real problem. It also missed one.
+
+This chapter places Division Architecture in that family — Palermo's Onion [@palermo2008onion], Cockburn's Hexagonal [@cockburn2005hexagonal], Martin's Clean Architecture [@martin2017clean] — credits what they got right, identifies what they missed, and gives the result a name the reader can hold in their head. The name is *Pizza Architecture*. The chapter earns the name by the time you finish reading it.
+
+## Three names for the same inversion
+
+Begin with the problem the family solved.
+
+Classical layered architecture organised systems top-down: the UI depended on the application services, the services depended on repositories, the repositories depended on the database. Dependencies flowed downward. The domain — the business logic that defined what the software was *for* — was at the bottom of the stack. To express it, you had to first descend through the layers above it. To compile it, those layers had to compile too. To test it, you had to mock or stand up everything above. The domain was buried.
+
+Jeffrey Palermo named the inversion in 2008 [@palermo2008onion]. Concentric rings instead of stacked layers. The domain core at the centre. Application services in a ring around it. Infrastructure — database adapters, web frameworks, message buses — in the outer ring. *Dependencies point inward*: outer rings know about inner rings, never the reverse. The domain at the centre depends on nothing. The infrastructure at the edge depends on everything inside it.
+
+Alistair Cockburn had been making roughly the same argument since the late 1990s under the name *Hexagonal Architecture* (or *Ports and Adapters*) [@cockburn2005hexagonal]. His framing emphasised the *boundary*: the domain has a hexagonal perimeter punctured by *ports* (interfaces) into which *adapters* (concrete implementations) plug. The hexagon is decoration; six is no more or less correct than any other number of sides. The substance is the same as Onion: the domain has a clean inside; the outside world plugs in through declared interfaces.
+
+Robert C. Martin's *Clean Architecture* [@martin2017clean] synthesised the family in 2017 as a book-length treatment. Same rings, same direction, more terminology (Entities, Use Cases, Interface Adapters, Frameworks-and-Drivers), more diagrams. Practitioners adopted it widely. Some adopted it religiously.
+
+Three names. One commitment: **dependencies point inward**. Outer rings depend on inner rings. Inner rings know nothing of outer ones. The domain, at the centre, depends on nothing the team can change without changing the business itself.
+
+This was right then and remains right. The inversion is the load-bearing claim and it is non-negotiable.
+
+## The cut they didn't notice
+
+Now name what the family missed.
+
+A codebase organised by concentric rings is *cut once*. The cut is horizontal: by layer. To find the "current user" in such a codebase, you might trace through `controllers/UserController` → `services/UserService` → `repositories/UserRepository` → `domain/User`. Four files, four directories, four rings. Each ring contains *everything* about *every* capability the system offers. The user-registration logic and the order-placement logic and the inventory-replenishment logic all live in the *services* ring, side by side. The capability is *scattered* across the rings.
+
+This pattern survives because, ring-by-ring, it is easy to staff and easy to standardise. You can hire a "backend services developer" who works in one ring. Every service module looks like every other. Layering enforces a uniform mechanism.
+
+The cost is paid by anyone trying to *navigate*. To understand what *issuing a loan* does in a horizontally-organised codebase, you open the controller for `LoanController.issue()`, follow it down to `LoanService.issueLoan()`, follow that down to `LoanRepository.save()`, follow that to `LoanEntity`. Four files, three of which contain code for thirty other capabilities that have nothing to do with loans. You read by layer; the loan is scattered.
+
+The cost compounds when you change. Adding a new field to "issue loan" touches the controller, the service, the repository, the entity, sometimes the validation layer, sometimes the DTO layer. A single business change ripples across six or seven files, each in a different ring. Pull requests grow correspondingly thick. Review attention thins. Bugs leak into places the author wasn't editing.
+
+The fix is structural, not procedural. *Cut the rings again, in a different direction.*
+
+The second cut is vertical. Take the concentric rings and slice them top-to-bottom with radial cuts. Each slice contains one ring-segment from every ring: a controller-segment, a service-segment, a repository-segment, a domain-segment. Each slice is a complete capability — *one* loan, *one* registration, *one* inventory replenishment — that crosses every ring at once. Each slice lives in one folder. The folder name screams what the slice is for.
+
+Now you navigate differently. To find "issue a loan" you open `issue_loan/`. Inside: the command record, the event record, the validation logic, the supervisor wiring, the projection that this slice writes — every layer of the capability, all in one place. The horizontal organisation is still present (each artifact knows which ring it belongs to) but the *physical* organisation is vertical. You read by slice. You change by slice. You review by slice.
+
+The classical inverted family did not articulate this cut. Greg Young's talks in the late 2010s started calling it *vertical slice architecture*. The Codex adopts the name and extends it: the inversion remains (dependencies point inward); the slicing is added on top. Onion plus slicing.
+
+## A pizza
+
+Onion plus slicing is a pizza.
+
+Think of a pizza in cross-section. Outer ring: the crust. Then sauce. Then cheese. Then toppings on top of the cheese. Concentric layers, like an Onion, but flat. Now look at how a pizza is *served*. Not by ring (you don't eat the cheese layer separately). By *wedge*: a radial slice that crosses every ring. Each wedge contains crust, sauce, cheese, toppings, in their natural concentric relationship. The pizza is *one* pizza; the wedge is *one* serving.
+
+That is the architecture. Concentric rings (the Departments: CMD, PRJ, QRY around the event store at the centre). Radial wedges (the Desks: one wedge per capability). Each wedge crosses every ring. The pizza is one Division; the wedges are how you serve it to your team and to your reader.
+
+Why a pizza and not, say, a wagon-wheel? Because a wheel has spokes, not slices, and the spokes do not *contain* the rings — they cross them but they are not made of them. A pizza wedge *is* the rings, locally, from crust to toppings. The wedge is not an addition to the rings; it is a viewing angle on them. That is the architecture exactly.
+
+::: {.callout-tip}
+## Figure 3.1 — A Division in cross-section
+
+The canonical Pizza Architecture diagram (a top-down pizza with concentric rings labelled CMD, PRJ, QRY around a central disc labelled *event store*, with radial wedges labelled with Desk names from the library example) will land in `figs/pizza-architecture.svg` in a future revision. Until then, hold the image in your head: rings + radial cuts, both visible from the same angle.
 :::
 
-A Division is shaped like a pizza, not an onion. The shape is the point.
+A note on the name. *Pizza Architecture* is unserious-sounding and the Codex picks it deliberately. The book wears its voice on its title page (*No Nonsense Event Sourcing*) and has earned the right to a memorable name where a generic one would do. Onion already crossed the food-metaphor line. *Spaghetti code*, *lasagna code*, *ravioli code* — the line was crossed by precedent. Pizza extends a tradition; it does not break one. Decision-makers who would dismiss a pattern called Pizza are dismissing the substance behind it as well, and the substance — the inversion plus the slicing — is what matters. We will spend the rest of the chapter on substance and not return to defending the name.
 
-## What this chapter will cover
+## Anatomy of a slice
 
-- **The inverted-architecture family.** Palermo's Onion [@palermo2008onion], Cockburn's Hexagonal [@cockburn2005hexagonal], Martin's Clean Architecture [@martin2017clean]: three names for the same commitment — dependencies point inward toward a domain core. The family solved the *direction* problem.
-- **The slicing problem they missed.** Concentric rings give you one cut: horizontal, by layer. A codebase organised this way reads by layer. To understand "issuing a loan" you walk through the controller ring, the service ring, the repository ring, the data ring, the domain ring. The capability is *scattered*.
-- **The second cut.** Slice the rings vertically. Each slice is a complete capability — a Desk — that crosses every ring at once. Read the codebase by slice. To understand "issuing a loan" you open the *issue_loan/* folder and the capability is *there*, command and event and handler and projection together.
-- **The mnemonic.** A pizza has rings (crust, sauce, cheese, toppings) and slices. You serve and eat by slice; the rings are present but they are not what you cut. The image holds in your head better than any UML diagram.
-- **The CMD / PRJ / QRY layout on a pizza.** Three Departments are three rings. Desks are slices. The event store is the centre.
-- **What you give up.** Slicing means more folders. The folder count grows with capability count, not file count. Tools that prefer flat structures (some IDE search defaults, some grep workflows) need configuration. Trade made deliberately.
+A slice is a folder, and the folder contains every artifact for one capability.
 
-## The figure that anchors the chapter
+Concrete: the lending library has a Desk called *issue_loan*. The Desk's slice lives in the Lending Division's CMD Department, at:
 
-The chapter will lead with a top-down pizza diagram: outer crust (the wire / API boundary), middle rings (CMD, PRJ, QRY), centre disc (the event store). Vertical slices cut all rings, each labelled with a Desk name from the library worked example: *issue_loan*, *return_loan*, *register_book*, *flag_overdue*.
+```
+apps/cmd_lending/src/issue_loan/
+├── issue_loan_v1.erl              # the command (record + constructor)
+├── loan_issued_v1.erl             # the event (record + helpers)
+├── maybe_issue_loan.erl           # the validation (decide if the slip
+│                                  #   can be added to the Loan dossier)
+├── issue_loan_sup.erl             # supervisor for this slice's processes
+│                                  #   (if the slice owns any)
+└── README.md                      # local notes (optional, often absent)
+```
 
-## Reference example
+Five files (often four; the README is optional). One folder. One capability. The folder name reads `issue_loan` and a developer browsing the project tree knows immediately that this is where Loan-issuance lives.
 
-The chapter will work through one slice of the lending library in full: *issue_loan/*. The folder contains the command record, the event record, the handler, the projection that updates the loans-by-borrower read model, and the supervisor wiring. Every artifact for one capability, in one place.
+Open `maybe_issue_loan.erl` and you find the business logic for one specific question: *can a new loan slip be added to this Loan dossier, given a Borrower and a Book?* Validation against the Borrower's open-loan count. Validation against the Book's loanable status. Construction of the `loan_issued_v1` event if validation passes. Return of an error reason if not. The whole decision lives in one module, one or two screens of code.
+
+Open `issue_loan_v1.erl` and you find a record definition for the command: `{issue_loan_v1, borrower_id, book_id, due_date}`. Maybe a constructor. Maybe a JSON encoder if the command crosses the wire. Two screens at most.
+
+Open `loan_issued_v1.erl` and you find a record for the event: `{loan_issued_v1, loan_id, borrower_id, book_id, issued_at, due_date}`. The event carries everything a projection downstream might need; the projection should not have to read other dossiers to do its job (see @sec-dossiers for why). One screen.
+
+The supervisor (`issue_loan_sup.erl`) is often trivial or absent. CMD-side slices in evoq frequently delegate process management to the aggregate; the slice's job is to define the contract (command + event) and the decision (handler), not to spawn long-lived workers. Where workers exist — a process manager listening for events from another Division, an idempotency tracker — they live in the slice that owns them.
+
+That is the entire CMD-side slice for *issue_loan*. Five files, ~200 lines of Erlang, every piece of code touched by Loan-issuance in one folder.
+
+The QRY side has its own slice. The *get_loan_by_id* Desk lives at:
+
+```
+apps/qry_lending/src/get_loan_by_id/
+├── get_loan_by_id.erl             # the read handler
+├── loan_issued_to_loans.erl       # projection: writes the loans table
+├── loan_returned_to_loans.erl     # also writes the loans table
+└── get_loan_by_id_sup.erl
+```
+
+The projections that maintain the *loans* read-model table live with the read handler that queries that table. The projection is the materialiser; the handler is the reader; they share a folder because they share a read-model. Adding a new field to the *loans* table touches both files in the same slice; no ripple across the codebase.
+
+The first time a developer browses a codebase organised this way, they spend ten minutes opening folders and finding that each folder has roughly the same shape — command, event, handler, supervisor, sometimes a projection — and each folder represents one capability. They learn the system by reading folder names. They do not need a feature inventory document; the folder listing *is* the feature inventory.
+
+## The three rings: CMD, PRJ, QRY
+
+A Division has exactly three rings, and they are Departments, not layers. *Layer* implies that traffic must traverse them in order. The rings do not work that way.
+
+**CMD** is the command ring. It accepts commands from the outside, validates them against state (rebuilt from event history), and emits events. The CMD ring contains all the slices that *change* the world. *issue_loan*, *register_book*, *open_membership*, *retire_book* — each of these is a Desk, and each Desk is a slice in the CMD ring.
+
+**PRJ** is the projection ring. It subscribes to events emitted by CMD, transforms them, and writes read-models. PRJ slices are usually fused into the QRY app for engineering convenience — projections exist *for* queries, and keeping them together avoids a third application boundary — but they are logically distinct. Each projection slice lives next to the read handler that consumes its read-model.
+
+**QRY** is the query ring. It accepts read requests, serves them from read-models, and returns results. QRY slices are *get_loan_by_id*, *list_overdue_loans_page*, *count_active_memberships*. Each is a Desk, each is a slice, each owns the projections that populate the read-models it queries.
+
+The rings are independent. CMD has no functions that QRY calls. QRY has no functions that CMD calls. The arrow between them is an *event subscription* — CMD writes to the event store; PRJ (inside QRY's app, usually) subscribes; the read-model updates. Asynchronously. With its own consistency story (see @sec-dossiers).
+
+The independence is structural, not stylistic. CMD and QRY can be in the same OS process, in two processes on the same node, or in two services on different nodes. The choice is operational, not architectural. The architecture asserts that they *could* be apart; the deployment chooses whether they are.
+
+This is where Pizza Architecture differs subtly from classical CQRS as it is usually drawn. Classical CQRS draws the command and query sides side-by-side with a shared event store; the message implied is *write side and read side are separate*. Pizza draws them as *rings*, with the event store at the *centre* and the boundary at the *edge*. The rings emphasise that CMD and QRY have a *shared inside* (the event store), and that both must respect the inversion (their slices depend on the events at the centre, not the other way around).
+
+Three Departments. Each a ring. Each crossed by every slice.
+
+## The centre: an event store, not a database
+
+At the centre of the Pizza is the event store. Not a database. Not a repository. Not a domain model. An *event store*.
+
+The choice is consequential. A database in the centre would mean the rings depend on its schema; a schema change ripples outward; the database is the source of truth for state. An event store does not work that way. The event store holds *events* — past tense, immutable, append-only. The rings derive everything they need by *folding* events: CMD rebuilds dossier state to validate; PRJ folds events into read-models; QRY reads those read-models without touching events directly.
+
+The event store is the centre because events are the most stable thing in the system. The names and shapes of events change rarely (and when they do, with explicit versioning — see @sec-screaming). The schemas of read-models change often; that is fine, because read-models are derived. The shapes of commands change often; that is fine, because commands are inputs. The events at the centre are the load-bearing invariant.
+
+In the running stack, the event store is *reckon-db* (@sec-reckon-db). It exposes append, read, subscribe, snapshot operations. The CMD ring's slices append events to it. The PRJ ring's slices subscribe to it. The QRY ring's slices query read-models built by the PRJ ring. The centre is a hub; everything connects to it; nothing in the centre depends on anything outside it.
+
+## What you pay
+
+Pizza Architecture has costs. Naming them up front is the only honest way to recommend the pattern.
+
+**Folder count grows.** A Division with thirty capabilities has thirty CMD slices (plus QRY slices, plus PMs). The folder tree is wider than a horizontally-layered codebase. Developers used to a flat `services/` folder will need to adjust. Tools that prefer flat structures (some IDE search defaults, some grep workflows that assume "everything is in one place") may need configuration. The depth is the trade for the explicitness.
+
+**Some plumbing duplicates.** Each slice that owns a supervisor has a `*_sup.erl` file. Each slice that owns a projection has projection scaffolding. Generic boilerplate (logging, telemetry initialisation, retry middleware) is duplicated across slices, in small amounts, by default. The cure is shared utilities at the *boundary* (the outer ring of the pizza, where infrastructure lives) — not shared *base classes* propagated down into slices. Cross-cutting concerns belong in the crust, not in the cheese.
+
+**New developers face more folders before they find familiar shapes.** A developer experienced with horizontally-layered codebases will initially feel disoriented. The orientation reverses within a week, once they internalise that the folder list IS the feature list. The cost is real but bounded.
+
+**Refactors that span slices are harder than refactors within a slice.** A change that touches three Desks touches three folders. The cure is to design at the Desk level: keep slices small, keep cross-slice dependencies few, keep shared semantics in named utilities rather than in inheritance. This is also a deliberate trade — refactors *within* a slice become trivial; refactors *across* slices become visible.
+
+**Greenfield projects feel over-organised.** Twelve folders for a system with twelve features looks excessive when the system is small. It looks proportionate when the system has eighty features. The pattern scales up better than down; greenfield projects pay slightly in early days for what they earn in later years.
+
+The costs are real. The Codex still recommends Pizza Architecture because the benefits accrue *over time*, and software that lives for years pays its costs at the start.
+
+## Counterclaims and responses
+
+A few objections deserve direct answers.
+
+> *Vertical slicing means duplicating code across slices.*
+
+It does not. It means duplicating *plumbing* across slices. Business logic lives in exactly one slice — the one that owns it — and other slices that need it import it explicitly. Cross-slice imports are visible in the file (they appear at the top); cross-slice imports through inheritance or hidden base classes are not. The slicing makes coupling visible; it does not create coupling that was not there.
+
+> *Folder count is going to explode.*
+
+It will. Deliberately. Each folder is one capability. If the system has many capabilities, it has many folders. The alternative — fewer folders, each with more code in it — moves the cost from filesystem-navigation to file-internal-navigation, and the latter is worse because files have no folder names to scream their contents.
+
+> *I cannot see all the projections at a glance.*
+
+You can: list the projection files. `find apps/qry_lending/src -name '*_to_*.erl'`. The naming convention is `{event}_to_{table}.erl`, and the convention makes them greppable. Tooling, not visual layout, gives the global view.
+
+> *This is just Clean Architecture with extra steps.*
+
+It is Clean Architecture *plus* vertical slicing. Clean gives you the rings; Pizza gives you the slices. Without the second cut, Clean is read by ring; the loan is scattered. With the second cut, the loan is in one folder. The "extra step" is the load-bearing one.
+
+> *Vertical slicing makes shared cross-cutting concerns hard.*
+
+It makes them *explicit*. Logging belongs in the crust (the outermost ring, where the wire-protocol adapters live); it is added once at the boundary and applied to all inbound requests. Authorization belongs at the boundary too. Telemetry belongs at the boundary. The slices contain *business* logic, not infrastructure logic. The discipline of asking "where does this belong: crust, ring, or wedge?" is precisely the discipline the architecture exists to produce.
+
+> *What about technical needs like database drivers, message-queue clients, NIFs?*
+
+They live in their own libraries, at the boundary. They are not slices; they are adapters. The reckon stack's NIFs (the hashing, the integrity primitives) live in dedicated Erlang applications that the slices call through clean function-call interfaces. The NIF library is in the crust; the slice in the cheese imports from it. The inversion is preserved.
+
+## Reading the codebase by slice
+
+The payoff for accepting the pattern is a codebase that reads itself.
+
+A developer joining the team opens the project, sees the Divisions, opens one, sees its three Department apps (CMD, PRJ, QRY, the third usually fused into the second), opens the CMD app, sees its `src/` directory, and reads the folder names. The folder names *are* the feature inventory. *issue_loan*. *return_loan*. *renew_loan*. *open_membership*. *suspend_membership*. The developer knows what the Division does within ten minutes, without opening a single file.
+
+This is *screaming architecture*, which @sec-screaming covers in detail. The pizza enables the scream — without vertical slicing, screaming names cannot reveal a capability, because the capability is not in one place to be named. With vertical slicing, every capability has a folder and the folder gets to scream.
+
+The combination is the second load-bearing claim of this book: *the architecture, named well, is the documentation*. Chapter 4 takes that claim seriously and works out the naming rules that make it true.
