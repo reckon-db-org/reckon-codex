@@ -2,13 +2,13 @@
 
 Robert C. Martin coined the phrase *Screaming Architecture* [@martin2017clean] for the principle that a system's structure should announce what the system *does*, not how it is *implemented*. Open the codebase, read the top-level folder names, and the system should be obvious. Open a Division's source tree, read the slice folder names, and the capabilities should be obvious. Open one slice, read the file names, and that slice's responsibilities should be obvious.
 
-The principle is simple. The discipline to follow it is not. Most codebases name by mechanism — *controllers*, *services*, *repositories*, *handlers* — because mechanism-naming is what frameworks teach. The result is architecture that mumbles. This chapter is about why business-intent naming is worth the discipline cost, what specifically to do and not do, and how to test whether a codebase passes.
+The principle is simple. The discipline to follow it is not. Most codebases name by mechanism (*controllers*, *services*, *repositories*, *handlers*) because mechanism-naming is what frameworks teach. The result is architecture that mumbles. This chapter is about why business-intent naming is worth the discipline cost, what specifically to do and not do, and how to test whether a codebase passes.
 
 ## The principle
 
 A name should answer: *what is this for?* The answer should be in the language of the business, not the language of the framework. A name that says *what is this implemented with?* fails. A name that says *what business outcome does this produce?* succeeds.
 
-The Pizza Architecture of @sec-pizza makes screaming names *possible*. Without vertical slicing, screaming names have nowhere to live — a single capability is scattered across `controllers/`, `services/`, `repositories/`, with no folder representing the capability as a whole, and no place to put a screaming name. Vertical slicing gives each capability its own folder; naming gives the folder its voice.
+The Pizza Architecture of @sec-pizza makes screaming names *possible*. Without vertical slicing, screaming names have nowhere to live; a single capability is scattered across `controllers/`, `services/`, `repositories/`, with no folder representing the capability as a whole, and no place to put a screaming name. Vertical slicing gives each capability its own folder; naming gives the folder its voice.
 
 The two doctrines reinforce each other. Pizza without screaming names produces folders called `slice1/`, `feature_a/`, *some-business-verb-here*/. Screaming names without Pizza produce folders named clearly but containing only one technical layer, with the other layers scattered. Both together: each capability has a folder; each folder has a name that announces the capability.
 
@@ -29,14 +29,14 @@ A suffix that describes the *mechanism* is a suffix that hides the *meaning*. Th
 
 These suffixes survive in codebases because they let a developer save a name. "I don't know what to call this; I'll call it `UserHelper` and move on." The save is paid back continuously by every reader who has to open `UserHelper` to find out what it actually does. The accumulated reading cost dwarfs the original naming cost by orders of magnitude across the codebase's lifetime.
 
-The discipline is to take the time, at the moment of naming, to write down the *thing the code does in business terms*. If you cannot, the code probably should not exist yet — its purpose is unclear and writing it will produce something whose role is also unclear.
+The discipline is to take the time, at the moment of naming, to write down the *thing the code does in business terms*. If you cannot, the code probably should not exist yet; its purpose is unclear and writing it will produce something whose role is also unclear.
 
 ::: {.callout-note}
 ## Counterclaim and response
 
-**Counterclaim:** *Some technical concerns genuinely exist — there must be a NIF wrapper module somewhere, a JSON encoder somewhere, an HTTP-handler binding somewhere. Are those forbidden?*
+**Counterclaim:** *Some technical concerns genuinely exist; there must be a NIF wrapper module somewhere, a JSON encoder somewhere, an HTTP-handler binding somewhere. Are those forbidden?*
 
-**Response:** No. Technical concerns belong at the *boundary* of the system — the crust of the Pizza — and they may carry technical names because their job *is* technical. `reckon_db_crypto_nif` is fine; it is a Rust NIF wrapper and its name says exactly that. `loan_management_service` is not fine; it claims a business concern but hides behind a generic suffix. The rule is: business-concern modules carry business names; infrastructure-edge modules may carry technical names, but they live at the edge and do not pretend to be the centre.
+**Response:** No. Technical concerns belong at the *boundary* of the system (the crust of the Pizza) and they may carry technical names because their job *is* technical. `reckon_db_crypto_nif` is fine; it is a Rust NIF wrapper and its name says exactly that. `loan_management_service` is not fine; it claims a business concern but hides behind a generic suffix. The rule is: business-concern modules carry business names; infrastructure-edge modules may carry technical names, but they live at the edge and do not pretend to be the centre.
 :::
 
 ## Forbidden: CRUD verbs
@@ -53,11 +53,11 @@ A *verb* describes an action with a business meaning. *Register* a user. *Renew*
 | `update_loan` | `renew_loan`, `flag_overdue`, `record_return` | Loan operations have specific meanings |
 | `delete_book` | `retire_book`, `withdraw_from_catalogue`, `mark_lost` | Books leave the system differently for different reasons |
 
-The CRUD trap is especially dangerous in event-sourced systems because *events take their names from commands*. If the command is `update_loan`, the event becomes `loan_updated_v1` — past tense, suffix versioned, but devoid of meaning. A `loan_updated_v1` event tells a projection *something happened to a loan*; it does not tell the projection *which thing*. The projection has to inspect the event's payload to know whether to update the read-model row, change its category, or remove it entirely. CRUD events force projections to branch on payload content; business-verb events let them branch on event type.
+The CRUD trap is especially dangerous in event-sourced systems because *events take their names from commands*. If the command is `update_loan`, the event becomes `loan_updated_v1`; past tense, suffix versioned, but devoid of meaning. A `loan_updated_v1` event tells a projection *something happened to a loan*; it does not tell the projection *which thing*. The projection has to inspect the event's payload to know whether to update the read-model row, change its category, or remove it entirely. CRUD events force projections to branch on payload content; business-verb events let them branch on event type.
 
 The cure is to look harder. When you find yourself reaching for `update`, ask: *what is this update for?* If the answer is *the address was wrong, this corrects it*, then the verb is `correct_address` and the event is `address_corrected_v1`. If the answer is *the user got a promotion*, then the verb is `promote_user` and the event is `user_promoted_v1`. Different verbs for different reasons. The reasons matter; that is the point.
 
-Some operations genuinely are generic — you might have a *amend_metadata* Desk that takes any metadata change and applies it. That's acceptable when the operation really is uniform. What's not acceptable is *using a generic verb to avoid thinking about specific verbs*. *Amend* is fine when amending is what's happening; *update* is never fine.
+Some operations genuinely are generic; you might have a *amend_metadata* Desk that takes any metadata change and applies it. That's acceptable when the operation really is uniform. What's not acceptable is *using a generic verb to avoid thinking about specific verbs*. *Amend* is fine when amending is what's happening; *update* is never fine.
 
 ## Required: business verbs (commands) and past-tense participles (events)
 
@@ -67,14 +67,14 @@ The naming convention for slices and modules in CMD departments:
 - **Events**: `{subject}_{verb_past}_{version}`. Examples: `user_registered_v1`, `loan_issued_v1`, `isbn_reserved_v1`, `loan_flagged_overdue_v1`, `book_retired_v1`.
 - **Slice folders**: same as the command, without the version. `register_user/`, `issue_loan/`, `reserve_isbn/`.
 
-The pairing — command in present tense, event in past tense — is meaningful. The command represents *intent* (someone wants to register a user); the event represents *outcome* (the user was registered). Reading slip after slip in a Dossier, the past-tense participles tell a story: *user was registered, address was corrected, premium was activated, account was archived*. Each past-tense participle is a fact about what happened. The Dossier's stream becomes prose, almost.
+The pairing (command in present tense, event in past tense) is meaningful. The command represents *intent* (someone wants to register a user); the event represents *outcome* (the user was registered). Reading slip after slip in a Dossier, the past-tense participles tell a story: *user was registered, address was corrected, premium was activated, account was archived*. Each past-tense participle is a fact about what happened. The Dossier's stream becomes prose, almost.
 
 QRY-side naming is similarly disciplined but uses different verbs:
 
 - **QRY Desks**: `get_{subject}_by_{filter}` or `list_{subjects}_page` or `count_{subjects}_by_{filter}`. Examples: `get_loan_by_id/`, `list_overdue_loans_page/`, `count_active_memberships_by_branch/`.
 - **Projections**: `{event}_to_{table}`. Examples: `loan_issued_to_loans.erl`, `book_retired_to_books.erl`.
 
-Note the projection-naming convention is `{event}_to_{table}` — event-name on the left, target-table on the right. This makes the data flow legible at a glance: *the `loan_issued_v1` event flows into the `loans` table*. The convention is also greppable: `find . -name '*_to_*.erl'` enumerates every projection in the codebase. Tooling, not documentation, gives the global view of the read-side.
+Note the projection-naming convention is `{event}_to_{table}`; event-name on the left, target-table on the right. This makes the data flow legible at a glance: *the `loan_issued_v1` event flows into the `loans` table*. The convention is also greppable: `find . -name '*_to_*.erl'` enumerates every projection in the codebase. Tooling, not documentation, gives the global view of the read-side.
 
 ## The folder-walk test
 
@@ -125,7 +125,7 @@ apps/cmd_lending/src/
     └── ValidationHelpers.java
 ```
 
-Twelve folders and files. The reader learns: *this code has controllers, services, handlers, repositories, and models, and there is a `utils` for the rest*. It does *not* learn what the Division does. To learn that, the reader must open `LoanService.java` and read the public methods — only to find that the methods are `processLoan()`, `updateLoan()`, `handleLoanEvent()`, names that themselves are content-free. The reader descends through layers and never finds the screaming.
+Twelve folders and files. The reader learns: *this code has controllers, services, handlers, repositories, and models, and there is a `utils` for the rest*. It does *not* learn what the Division does. To learn that, the reader must open `LoanService.java` and read the public methods; only to find that the methods are `processLoan()`, `updateLoan()`, `handleLoanEvent()`, names that themselves are content-free. The reader descends through layers and never finds the screaming.
 
 The folder-walk test is a useful interview screen for codebases. Open the top-level folder of any project, list the entries, ask a developer who has never seen the code what the system does. If they answer correctly in ten minutes, the names are screaming. If they cannot, the names are not.
 
@@ -133,9 +133,9 @@ The folder-walk test is a useful interview screen for codebases. Open the top-le
 
 The Codex is not blind to the fact that real systems have technical concerns. Some code legitimately does technical work: encoding, parsing, networking, NIF wrapping, telemetry collection, retry middleware. None of this work is *business* work, and none of it should pretend to be.
 
-Such code lives at the *boundary* of the system — the outermost ring of the Pizza, the crust. Its name can describe its mechanism because its job *is* mechanism. `reckon_gateway_grpc`, `reckon_db_hash_nif`, `evoq_telemetry`, `cowboy_handler_bindings` — these are infrastructure names, and their infrastructure-ness is honest. They sit at the wire, the file system, the JIT compiler. They are not slices of the Pizza; they are the plate the Pizza sits on.
+Such code lives at the *boundary* of the system; the outermost ring of the Pizza, the crust. Its name can describe its mechanism because its job *is* mechanism. `reckon_gateway_grpc`, `reckon_db_hash_nif`, `evoq_telemetry`, `cowboy_handler_bindings`; these are infrastructure names, and their infrastructure-ness is honest. They sit at the wire, the file system, the JIT compiler. They are not slices of the Pizza; they are the plate the Pizza sits on.
 
-The discipline is to keep this code *at the boundary*, named for what it is, and not let its naming style leak inward into the slices. The crust is allowed technical names; the cheese (the rings) and the toppings (the slices) are not. A slice called `reckon_db_loan_handler` is wrong — *loan* is a business concern; *reckon_db* and *handler* together drag the slice toward the crust where it does not belong. The slice is `issue_loan`. Whether it ultimately writes to reckon-db is an implementation detail and not part of the slice's identity.
+The discipline is to keep this code *at the boundary*, named for what it is, and not let its naming style leak inward into the slices. The crust is allowed technical names; the cheese (the rings) and the toppings (the slices) are not. A slice called `reckon_db_loan_handler` is wrong; *loan* is a business concern; *reckon_db* and *handler* together drag the slice toward the crust where it does not belong. The slice is `issue_loan`. Whether it ultimately writes to reckon-db is an implementation detail and not part of the slice's identity.
 
 ## Anti-patterns in the wild
 
@@ -157,12 +157,12 @@ start_phase, pause_phase, resume_phase, complete_phase
 
 ### Filename suffixes that duplicate the folder
 
-A slice called `issue_loan/` with files inside it called `issue_loan_command.erl`, `issue_loan_event.erl`, `issue_loan_handler.erl`. The file suffixes duplicate the slice name and add the very technical suffixes (`_command`, `_event`, `_handler`) the discipline is trying to avoid. Better naming: `issue_loan_v1.erl` (the command), `loan_issued_v1.erl` (the event), `maybe_issue_loan.erl` (the handler — the `maybe_` prefix announces that this is a decision function that may say no). The files inside a slice carry the *role within the slice*; they do not duplicate the slice's purpose.
+A slice called `issue_loan/` with files inside it called `issue_loan_command.erl`, `issue_loan_event.erl`, `issue_loan_handler.erl`. The file suffixes duplicate the slice name and add the very technical suffixes (`_command`, `_event`, `_handler`) the discipline is trying to avoid. Better naming: `issue_loan_v1.erl` (the command), `loan_issued_v1.erl` (the event), `maybe_issue_loan.erl` (the handler; the `maybe_` prefix announces that this is a decision function that may say no). The files inside a slice carry the *role within the slice*; they do not duplicate the slice's purpose.
 
 ## What this enables
 
-Names that scream are the second load-bearing claim of this book (the first being vertical slicing). Together they produce a codebase that *documents itself*. Onboarding takes hours instead of weeks. Code review is faster because the change is *in `flag_overdue/`* — the reviewer already knows what's being changed before reading a line. Refactoring is safer because moving code means moving it to its right-named folder, and the right-named folder is obvious.
+Names that scream are the second load-bearing claim of this book (the first being vertical slicing). Together they produce a codebase that *documents itself*. Onboarding takes hours instead of weeks. Code review is faster because the change is *in `flag_overdue/`*; the reviewer already knows what's being changed before reading a line. Refactoring is safer because moving code means moving it to its right-named folder, and the right-named folder is obvious.
 
 The architectural commitments of Part I are now complete. Dossiers (@sec-dossiers) and Decisions (@sec-dossiers) provide consistency. The Pizza (@sec-pizza) provides structure. Pipelines and Process Managers (@sec-pipelines) provide coordination. The Reckon Cycle (@sec-cycle) provides the meta-process. Screaming names (this chapter) make all of it legible.
 
-Part II walks the libraries that turn these commitments into running software. The first chapter of Part II covers *reckon-db* — the event store at the centre of every Pizza — and is the next door to open.
+Part II walks the libraries that turn these commitments into running software. The first chapter of Part II covers *reckon-db* (the event store at the centre of every Pizza) and is the next door to open.

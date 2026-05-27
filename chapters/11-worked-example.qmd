@@ -6,12 +6,12 @@ The example is a lending library. The choice is deliberate: a library is univers
 
 The chapter walks four scenarios end-to-end:
 
-1. *Registering a new book* — a Catalogue Dossier comes into being and an integration fact crosses to Lending.
-2. *Reserving an ISBN* — a Decision enforces a cross-cutting uniqueness invariant.
-3. *Issuing a loan with a Borrower-open-loan-count check* — a command pipeline pre-loads cross-entity facts so the Dossier stays pure.
-4. *Polyglot: a Go client* — the same patterns reached from outside the BEAM.
+1. *Registering a new book*; a Catalogue Dossier comes into being and an integration fact crosses to Lending.
+2. *Reserving an ISBN*; a Decision enforces a cross-cutting uniqueness invariant.
+3. *Issuing a loan with a Borrower-open-loan-count check*; a command pipeline pre-loads cross-entity facts so the Dossier stays pure.
+4. *Polyglot: a Go client*; the same patterns reached from outside the BEAM.
 
-Each scenario shows real code and real folder structures. The chapter is not a tutorial — it does not march through setup steps. It is a demonstration: *this is what an event-sourced Division built on the reckon stack looks like.*
+Each scenario shows real code and real folder structures. The chapter is not a tutorial; it does not march through setup steps. It is a demonstration: *this is what an event-sourced Division built on the reckon stack looks like.*
 
 ## The Domain and its Divisions
 
@@ -77,7 +77,7 @@ The event:
 }).
 ```
 
-The handler — the decision logic for whether the command can be accepted:
+The handler; the decision logic for whether the command can be accepted:
 
 ```erlang
 %% maybe_register_book.erl
@@ -109,11 +109,11 @@ decide(#book_state{status = retired}, #register_book_v1{}) ->
     {error, book_was_retired}.
 ```
 
-Three things to notice. First, the Dossier is the *Book* (one stream per book; the stream id is `book-{isbn}-{copy_number}`). The Dossier's state machine accepts a register only from the `none` (empty) state — the stream-version concurrency check at append time guarantees this remains true under concurrent retries.
+Three things to notice. First, the Dossier is the *Book* (one stream per book; the stream id is `book-{isbn}-{copy_number}`). The Dossier's state machine accepts a register only from the `none` (empty) state; the stream-version concurrency check at append time guarantees this remains true under concurrent retries.
 
 Second, the handler returns `{error, _}` for state-violations *and* for invalid input (a bad ISBN). The Codex's discipline (@sec-screaming) keeps validation local to the slice; the aggregate does not delegate validation to "validators" elsewhere.
 
-Third, the slice is *short*. Four files, ~80 lines of Erlang for the entire capability. Adding a new field — say, a `genre` — touches at most three of these files (command, event, handler) and the projection on the QRY side. No fan-out, no architecture meeting, no migration plan.
+Third, the slice is *short*. Four files, ~80 lines of Erlang for the entire capability. Adding a new field (say, a `genre`) touches at most three of these files (command, event, handler) and the projection on the QRY side. No fan-out, no architecture meeting, no migration plan.
 
 ### The Catalogue aggregate
 
@@ -153,7 +153,7 @@ apply(#metadata_corrected_v1{} = E, State) ->
     }.
 ```
 
-The aggregate is also short. Each command type dispatches to its slice's handler; each event type updates state. The aggregate itself contains no business logic — the logic lives in the slices, which is where reviewers find it.
+The aggregate is also short. Each command type dispatches to its slice's handler; each event type updates state. The aggregate itself contains no business logic; the logic lives in the slices, which is where reviewers find it.
 
 ### The integration fact
 
@@ -190,7 +190,7 @@ handle(#evoq_envelope{event = #book_registered_v1{} = E}, State) ->
     {ok, State#{published => maps:get(published, State) + 1}}.
 ```
 
-The fact's name (`catalogue.book_loanable_v1`) is *not* the same as the internal event's name (`book_registered_v1`). The naming difference is deliberate: the public fact says what *downstream consumers care about* (the book is now loanable); the internal event says what *Catalogue records about its own state* (the book was registered). The two are not synonymous — registering a book in Catalogue is one of several possible paths to loanable-ness; future scenarios (e.g., books transferred from another library) might also produce loanable facts without producing `book_registered_v1` internal events.
+The fact's name (`catalogue.book_loanable_v1`) is *not* the same as the internal event's name (`book_registered_v1`). The naming difference is deliberate: the public fact says what *downstream consumers care about* (the book is now loanable); the internal event says what *Catalogue records about its own state* (the book was registered). The two are not synonymous; registering a book in Catalogue is one of several possible paths to loanable-ness; future scenarios (e.g., books transferred from another library) might also produce loanable facts without producing `book_registered_v1` internal events.
 
 This is the discipline of @sec-pipelines made concrete: *domain events stay local, integration facts cross*. Catalogue's freedom to refactor its internal event shapes is preserved.
 
@@ -296,7 +296,7 @@ has_open_reservation(Events) ->
 
 The Decision is dispatched via `evoq_decision_runtime:dispatch(reserve_isbn, catalogue, Cmd)`. The runtime:
 
-1. Calls `context/1` to get the filter — `{all_of, [<<"isbn:9780321125217">>, <<"kind:reservation">>]}`.
+1. Calls `context/1` to get the filter; `{all_of, [<<"isbn:9780321125217">>, <<"kind:reservation">>]}`.
 2. Reads events matching that filter from the `_dcb` pseudo-stream. Observes the highest seq among them.
 3. Calls `decide/2` with the context events. If `decide/2` returns an error, the runtime surfaces it directly. If it returns `{ok, Events}`, the runtime issues `append_if_no_tag_matches` with the same filter and the observed cutoff.
 4. On success, returns `{ok, NewEvents}`. On `context_changed` (someone else just added a matching event), retries from step 1 with refreshed context, up to `retry_budget/0` times.
@@ -314,7 +314,7 @@ A Borrower wants to borrow a book. The constraints:
 - The Book must be loanable (registered, not retired).
 - The Book must not currently be on loan.
 
-The first three constraints reach outside the Loan Dossier — they are facts about *other* Dossiers (Membership, Book). The Loan Dossier cannot read read-models inside its `apply/2` (the cardinal sin of @sec-pipelines). The cure is a command pipeline.
+The first three constraints reach outside the Loan Dossier; they are facts about *other* Dossiers (Membership, Book). The Loan Dossier cannot read read-models inside its `apply/2` (the cardinal sin of @sec-pipelines). The cure is a command pipeline.
 
 ### The slice
 
@@ -366,7 +366,7 @@ run(#{command := #issue_loan_v1{borrower_id = BorrowerId} = Cmd,
     }.
 ```
 
-The step reads a read-model. Reading a read-model outside event flow is *fine* — the prohibition is on reading inside the aggregate's `apply/2`, not on reading in pipeline steps that run before the aggregate sees the command. The pipeline runs in dedicated worker code at the slice boundary; its reads do not threaten replay.
+The step reads a read-model. Reading a read-model outside event flow is *fine*; the prohibition is on reading inside the aggregate's `apply/2`, not on reading in pipeline steps that run before the aggregate sees the command. The pipeline runs in dedicated worker code at the slice boundary; its reads do not threaten replay.
 
 ### The handler
 
@@ -410,11 +410,11 @@ decide(#loan_state{status = returned}, _Ctx) ->
     {error, loan_already_concluded}.
 ```
 
-The handler is a pure function of `(state, context)`. The state comes from the Loan Dossier's history; the context contains everything else needed for the decision. The cross-entity facts are *captured in the resulting event* — `borrower_open_loan_count_at_issue`, `book_loanable_status_at_issue`, `membership_status_at_issue` — so a future replay sees not just the action but the facts that justified it.
+The handler is a pure function of `(state, context)`. The state comes from the Loan Dossier's history; the context contains everything else needed for the decision. The cross-entity facts are *captured in the resulting event* (`borrower_open_loan_count_at_issue`, `book_loanable_status_at_issue`, `membership_status_at_issue`) so a future replay sees not just the action but the facts that justified it.
 
 If the Borrower files a complaint six months later that they were over-the-limit when this loan was issued, an investigator can replay the Loan Dossier and *see what the system knew*. The decision is auditable not just for *what was decided* but *why it was decided that way*.
 
-## Scenario 4: Polyglot — a Go client
+## Scenario 4: Polyglot; a Go client
 
 A reservation kiosk runs a Go service. The kiosk needs to reserve ISBNs on behalf of walk-in patrons. The Go service uses the *reckon-go* SDK to reach the Catalogue Division's gateway:
 
@@ -491,7 +491,7 @@ This is the Decision pattern from outside the BEAM. The Go client:
 - Attempts the conditional append.
 - Handles the three outcomes: error (network/backend), conflict (context stale), committed (success).
 
-The Go client orchestrates the read-decide-write loop manually — there is no server-side `evoq_decision_runtime` equivalent in the polyglot path. For the kiosk's use case (one user at a time, low contention) this is fine. For high-contention polyglot Decisions, the client implements its own retry loop with the same bounded-budget discipline.
+The Go client orchestrates the read-decide-write loop manually; there is no server-side `evoq_decision_runtime` equivalent in the polyglot path. For the kiosk's use case (one user at a time, low contention) this is fine. For high-contention polyglot Decisions, the client implements its own retry loop with the same bounded-budget discipline.
 
 The gateway routes the requests to the Catalogue cluster, which runs the same `append_if_no_tag_matches/4` primitive that Erlang clients use. The events written are the same events. A subsequent Erlang client running `evoq_decision_runtime:dispatch(reserve_isbn, catalogue, Cmd)` would see the kiosk's reservation in its context and respond with `isbn_already_reserved`. The two worlds (BEAM and polyglot) share one event log and one set of consistency guarantees.
 

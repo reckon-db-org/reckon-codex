@@ -1,6 +1,6 @@
 # The D5 Model {#sec-d5}
 
-Software systems have a problem of containers. Where does *this* piece of code belong? Which folder, which module, which service, which team, which release cadence? The classical answer — *organise by layer: controllers here, services there, repositories below* — fails because layers are not containers of meaning. A layer is a slice of mechanism. The question "where does the registration logic live?" has the same answer as "where does the payments logic live?" under a layered scheme: *all over the place*.
+Software systems have a problem of containers. Where does *this* piece of code belong? Which folder, which module, which service, which team, which release cadence? The classical answer (*organise by layer: controllers here, services there, repositories below*) fails because layers are not containers of meaning. A layer is a slice of mechanism. The question "where does the registration logic live?" has the same answer as "where does the payments logic live?" under a layered scheme: *all over the place*.
 
 The Codex's answer is the **D5 model**: five nested containers, organised by meaning, every one of them named for what it *is*, not for the mechanism it uses.
 
@@ -22,52 +22,52 @@ Each level contains the level below. The Dossier is unusual: it is not a contain
 | **Domain** | The whole problem space the organisation serves | "Library Services" |
 | **Division** | A cohesive piece of software with its own release cycle and bounded vocabulary | "Lending" |
 | **Department** | One of three departments inside a Division (CMD, PRJ, QRY) | the *Lending CMD* |
-| **Desk** | A single capability — one verb, one subject | *register_book*, *issue_loan* |
+| **Desk** | A single capability; one verb, one subject | *register_book*, *issue_loan* |
 | **Dossier** | The artifact that accumulates events as it passes through Desks | *Loan #018f6a7b* |
 
 That is the whole model. The rest of this chapter is what each level *means*, what each one is *not*, and how they compose.
 
-## Domain — the whole problem space
+## Domain; the whole problem space
 
 A Domain is what the organisation is *for*. "Library Services" is a Domain. "Payments". "Logistics". "Insurance Underwriting". A Domain has many Divisions but only one identity.
 
-The senior usage in Eric Evans's *Domain-Driven Design* uses "domain" exactly this way: the entire problem space. The Codex uses it the same way. A common-room confusion in DDD discourse is the *other* usage — *domain* as a near-synonym for *bounded context*. This Codex calls a bounded context a **Division**. The reasons are mechanical: Domains do not have release cycles, do not have technology stacks, do not deploy. Divisions do all three. Conflating them blurs which thing is being argued about.
+The senior usage in Eric Evans's *Domain-Driven Design* uses "domain" exactly this way: the entire problem space. The Codex uses it the same way. A common-room confusion in DDD discourse is the *other* usage; *domain* as a near-synonym for *bounded context*. This Codex calls a bounded context a **Division**. The reasons are mechanical: Domains do not have release cycles, do not have technology stacks, do not deploy. Divisions do all three. Conflating them blurs which thing is being argued about.
 
 A Domain rarely shows up in a codebase. It shows up on a strategy slide, in a leadership conversation, in a name above the engineering org-chart. When a Domain appears in the system at all, it is as a top-level repo-group or workspace name. Below that line, the Domain dissolves into Divisions.
 
-## Division — a cohesive piece of software
+## Division; a cohesive piece of software
 
 A Division is one bounded context, one cohesive software system, one release cycle, one technology stack. It has the property a Domain lacks: you can deploy it.
 
-A Division is the unit of *team ownership* and *autonomous release*. The Lending team owns the Lending Division; they release on their own cadence; they choose their own runtime. The Lending Division has a vocabulary — *Loan*, *Borrower*, *Reservation* — that is locally consistent and may differ from other Divisions. The library may have a separate *Acquisitions Division* with its own vocabulary (*Order*, *Vendor*, *Receipt*) that overlaps in places but does not need to agree everywhere.
+A Division is the unit of *team ownership* and *autonomous release*. The Lending team owns the Lending Division; they release on their own cadence; they choose their own runtime. The Lending Division has a vocabulary (*Loan*, *Borrower*, *Reservation*) that is locally consistent and may differ from other Divisions. The library may have a separate *Acquisitions Division* with its own vocabulary (*Order*, *Vendor*, *Receipt*) that overlaps in places but does not need to agree everywhere.
 
-Two Divisions communicate via well-defined integration points — events on a shared bus, or RPC across the gateway — never via shared databases. The integration points are slow and explicit. Inside a Division, the vocabulary is fast and intimate.
+Two Divisions communicate via well-defined integration points (events on a shared bus, or RPC across the gateway) never via shared databases. The integration points are slow and explicit. Inside a Division, the vocabulary is fast and intimate.
 
 The classical bounded-context literature underdeveloped this distinction by reusing "domain" for the thing we call Division. The Codex insists on the rename because the same word for the strategy-slide concept and the deployable concept makes every architecture conversation harder.
 
-## Department — CMD, PRJ, QRY
+## Department; CMD, PRJ, QRY
 
 Inside a Division there are always exactly three Departments. They are not optional and they are not negotiable.
 
-- **CMD** — the *command* side. Receives commands, validates them against state, emits events.
-- **PRJ** — the *projection* side. Subscribes to events, builds read models, materialises views.
-- **QRY** — the *query* side. Serves reads from the read models built by PRJ.
+- **CMD**; the *command* side. Receives commands, validates them against state, emits events.
+- **PRJ**; the *projection* side. Subscribes to events, builds read models, materialises views.
+- **QRY**; the *query* side. Serves reads from the read models built by PRJ.
 
 This is straightforward CQRS, with one structural commitment the literature usually leaves implicit: **CMD, PRJ, and QRY are sibling deployables, not layers of the same deployable**. They can be in the same OS process or in three; either way they are not stacked. The arrow from CMD to PRJ is an event subscription, not a function call. The arrow from PRJ to QRY is a read-model handoff, not an inheritance relation.
 
-The Department names — CMD, PRJ, QRY — are deliberately three letters and deliberately not English words. They appear in folder names, repo names, app names. *manage_loans/* is a CMD; *query_loans/* is a QRY. The third Department, PRJ, is usually fused into the QRY app (the projections are *for* the queries) but is logically distinct.
+The Department names (CMD, PRJ, QRY) are deliberately three letters and deliberately not English words. They appear in folder names, repo names, app names. *manage_loans/* is a CMD; *query_loans/* is a QRY. The third Department, PRJ, is usually fused into the QRY app (the projections are *for* the queries) but is logically distinct.
 
-## Desk — a single capability
+## Desk; a single capability
 
-A Desk is one verb, one subject, one outcome. *register_book*, *issue_loan*, *return_loan*, *renew_loan*, *flag_overdue*. Each Desk is one capability that the Division offers — to its users, to other Divisions, to time itself in the case of scheduled work.
+A Desk is one verb, one subject, one outcome. *register_book*, *issue_loan*, *return_loan*, *renew_loan*, *flag_overdue*. Each Desk is one capability that the Division offers; to its users, to other Divisions, to time itself in the case of scheduled work.
 
-A Desk lives in one folder. The folder name *screams* what the Desk does, because the convention is: folders are verb_subject. Inside the folder, all the code for that capability lives together — the command record, the event record, the handler, the projection that depends on its events. This is *vertical slicing* and Chapter 3 has the full treatment. For now: a Desk is a slice.
+A Desk lives in one folder. The folder name *screams* what the Desk does, because the convention is: folders are verb_subject. Inside the folder, all the code for that capability lives together; the command record, the event record, the handler, the projection that depends on its events. This is *vertical slicing* and Chapter 3 has the full treatment. For now: a Desk is a slice.
 
 Desks belong to Departments. A CMD Department has Desks like *issue_loan/*. A QRY Department has Desks like *get_loan_by_id/* or *list_overdue_loans_page/*. The naming convention shifts subtly between CMD and QRY: CMD Desks use a present-tense business verb; QRY Desks use *get_* / *list_* / *count_* + a noun.
 
-A Division might have thirty Desks. Forty. More. Listing them in their folder gives a reader the complete capability inventory of the Division in one glance — no class diagrams, no architecture slides, no documentation. *That is the point of a Desk being a folder*.
+A Division might have thirty Desks. Forty. More. Listing them in their folder gives a reader the complete capability inventory of the Division in one glance; no class diagrams, no architecture slides, no documentation. *That is the point of a Desk being a folder*.
 
-## Dossier — the artifact that flows through Desks
+## Dossier; the artifact that flows through Desks
 
 The first four levels are containers. The fifth is different: a **Dossier** is what *passes through* the containers, accumulating events as it goes.
 
@@ -75,7 +75,7 @@ In the lending library, a *Loan* is a Dossier. It begins life when a Borrower is
 
 A Dossier is not a database row. A Dossier *is* its history. Rebuilding state means replaying the events front to back. The "current state" of a Dossier is a derived quantity, computed by folding the events. There is no canonical *Loan* table in the canonical sense; there is a stream of Loan events, and there are projections that materialise convenient views of those streams into tables.
 
-Validation in this world becomes: *can this slip be added to this Dossier?* — where a slip is one new event we are proposing to append. *Can a loan_renewed_v1 be added to this Loan? Only if the Loan is currently opened, not returned, not archived.* The Dossier's history tells us, deterministically, what its current state is, and therefore which slips can or cannot be added.
+Validation in this world becomes: *can this slip be added to this Dossier?*; where a slip is one new event we are proposing to append. *Can a loan_renewed_v1 be added to this Loan? Only if the Loan is currently opened, not returned, not archived.* The Dossier's history tells us, deterministically, what its current state is, and therefore which slips can or cannot be added.
 
 The word *Dossier* is chosen carefully. It evokes a paper folder that accumulates documents over time. It is not a record. It is not a row. It is not an object with a state field. It is a folder of paper, and you read it front to back to know what happened.
 
@@ -91,6 +91,6 @@ The Codex chooses navigation and changeability over staffing and standardisation
 
 ## What this enables
 
-The rest of the book leans heavily on the D5 vocabulary. Chapter 3 will explain why a Division is shaped like a pizza, not an onion. Chapter 4 will explain why every Desk folder is named so it screams. Chapter 5 will explain how a Dossier's concurrency is enforced (and when you need a Decision instead). Chapter 7 will explain how Divisions are built — the *Reckon Cycle* — from inception through rescue. Part II will show you the actual code that makes the levels real.
+The rest of the book leans heavily on the D5 vocabulary. Chapter 3 will explain why a Division is shaped like a pizza, not an onion. Chapter 4 will explain why every Desk folder is named so it screams. Chapter 5 will explain how a Dossier's concurrency is enforced (and when you need a Decision instead). Chapter 7 will explain how Divisions are built (the *Reckon Cycle*) from inception through rescue. Part II will show you the actual code that makes the levels real.
 
-If you remember nothing else from this chapter, remember this: the system has five levels, and the bottom one — the Dossier — flows through the other four, accumulating events. Everything else in the book is consequence.
+If you remember nothing else from this chapter, remember this: the system has five levels, and the bottom one (the Dossier) flows through the other four, accumulating events. Everything else in the book is consequence.

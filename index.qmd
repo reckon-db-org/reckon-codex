@@ -6,9 +6,9 @@ It is opinionated because event sourcing has accumulated decades of folklore, so
 
 It is short because the substance of event sourcing fits in a single book. The patterns are not numerous; they are interlocking. When you understand the Dossier, you understand why aggregates have edges. When you understand the Pizza, you understand why horizontal layers fail. When you understand the Cycle, you understand why architecture is not a phase. Once these click, the rest follows.
 
-The book grew out of a working software stack — *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto* — and the years of practice that shaped it. The stack ships under permissive licences. The patterns are older than the stack and will outlive it. Both are documented here.
+The book grew out of a working software stack (*reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*) and the years of practice that shaped it. The stack ships under permissive licences. The patterns are older than the stack and will outlive it. Both are documented here.
 
-Three audiences. Practitioners adopting the stack will read for the *how*. Decision-makers evaluating it will read for the *why*. People who have read every Greg Young blog post and every Vaughn Vernon book will read for the *what now* — the parts where this Codex departs from the orthodoxy. Each chapter serves all three; the depth opens as you go.
+Three audiences. Practitioners adopting the stack will read for the *how*. Decision-makers evaluating it will read for the *why*. People who have read every Greg Young blog post and every Vaughn Vernon book will read for the *what now*; the parts where this Codex departs from the orthodoxy. Each chapter serves all three; the depth opens as you go.
 
 What the book is not:
 

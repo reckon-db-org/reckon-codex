@@ -35,13 +35,13 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   *Command Query Responsibility Segregation*. The pattern of splitting the write side (commands, events) from the read side (queries, read-models). Greg Young's 2010 articulation [@young2010cqrs]. The Codex treats CQRS and event sourcing as one architectural commitment. See @sec-why.
 
 **Crust**
-:   The outer ring of the *Pizza* — infrastructure adapters, NIFs, wire-protocol bindings. Technical concerns belong here, named for their mechanism. The discipline forbids technical names from leaking into slice folders. See @sec-screaming.
+:   The outer ring of the *Pizza*; infrastructure adapters, NIFs, wire-protocol bindings. Technical concerns belong here, named for their mechanism. The discipline forbids technical names from leaking into slice folders. See @sec-screaming.
 
 **DCB**
 :   *Dynamic Consistency Boundary*. The primitive that backs *Decisions*: tag-filter conditional append, where the consistency unit is a query over many streams rather than one stream's version. Underlying mechanism in *reckon-db*: `append_if_no_tag_matches/4`. See @sec-dossiers, @sec-reckon-db.
 
 **Decision**
-:   The cross-cutting consistency primitive. Writes events conditional on no event matching a tag-filter having seq above a cutoff. The escape hatch for invariants that resist any *Dossier* shape — uniqueness, allocation, rate limits. Implemented as the `evoq_decision` behaviour. See @sec-dossiers.
+:   The cross-cutting consistency primitive. Writes events conditional on no event matching a tag-filter having seq above a cutoff. The escape hatch for invariants that resist any *Dossier* shape; uniqueness, allocation, rate limits. Implemented as the `evoq_decision` behaviour. See @sec-dossiers.
 
 **Department**
 :   One of three sub-units of a *Division*: *CMD*, *PRJ*, *QRY*. Sibling deployables, not stacked layers. PRJ is typically fused into QRY for engineering convenience but is logically distinct. See @sec-pizza.
@@ -50,13 +50,13 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   A single capability inside a Department. One verb, one subject (e.g. *issue_loan*). Lives in one folder; the folder name *screams* the capability. The slicing happens at the Desk boundary. See @sec-pizza, @sec-screaming.
 
 **Division**
-:   A cohesive piece of software with its own release cycle and bounded vocabulary — a *bounded context* in the Evans sense [@evans2003ddd]. Distinct from *Domain*. Has one *event store*, three *Departments*, many *Desks*. The unit of team ownership and autonomous release. See @sec-d5.
+:   A cohesive piece of software with its own release cycle and bounded vocabulary; a *bounded context* in the Evans sense [@evans2003ddd]. Distinct from *Domain*. Has one *event store*, three *Departments*, many *Desks*. The unit of team ownership and autonomous release. See @sec-d5.
 
 **Domain**
 :   The whole problem space a software organisation serves. Larger than a *Division*; a Domain typically contains multiple Divisions. The Codex's senior use of "domain"; DDD literature sometimes uses the word for what this book calls a Division. See @sec-d5.
 
 **Dossier**
-:   The process artefact that flows through *Desks*, accumulating events. A *Loan*, a *Membership*, an *Order* — all Dossiers. Identity carrier; stream owner; concurrency unit. The 90%-case alternative to the *Decision*. See @sec-d5, @sec-dossiers.
+:   The process artefact that flows through *Desks*, accumulating events. A *Loan*, a *Membership*, an *Order*; all Dossiers. Identity carrier; stream owner; concurrency unit. The 90%-case alternative to the *Decision*. See @sec-d5, @sec-dossiers.
 
 **Embedded mode**
 :   One of three *reckon-gateway* operational modes. The gateway runs a local *reckon-db* *store* and serves it directly over gRPC. See @sec-gateway.
@@ -65,7 +65,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The immutable record of one fact about the world. Past-tense, versioned (`loan_issued_v1`). Carries identity, type, stream id, version, position, data, metadata, tags, integrity fields. The unit of writing in an event-sourced system. See @sec-reckon-db.
 
 **Event handler**
-:   An *evoq* behaviour for side effects triggered by events — notifications, integrations, alerts. Subscribes to events, performs an effect, acknowledges. Sibling concept to *projection*; differs in that the effect is *outside* the system (HTTP, SMTP), not a read-model. See @sec-evoq.
+:   An *evoq* behaviour for side effects triggered by events; notifications, integrations, alerts. Subscribes to events, performs an effect, acknowledges. Sibling concept to *projection*; differs in that the effect is *outside* the system (HTTP, SMTP), not a read-model. See @sec-evoq.
 
 **Event sourcing**
 :   The discipline of using an *append-only log* of *events* as the primary record of state. State is derived by folding. The book's central architectural commitment; @sec-why argues the case.
@@ -101,7 +101,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   A versioned, named, stable shape published to the *mesh* for cross-*Division* consumption. Distinct from a *domain event*: domain events stay local to their Division; integration facts are explicit contracts. See @sec-pipelines.
 
 **Inverted architecture**
-:   The family of patterns that invert the dependency direction relative to classical layered architecture — *Onion*, *Hexagonal*, *Clean*. Dependencies point inward toward a domain core. *Pizza Architecture* extends the family with vertical slicing. See @sec-pizza.
+:   The family of patterns that invert the dependency direction relative to classical layered architecture; *Onion*, *Hexagonal*, *Clean*. Dependencies point inward toward a domain core. *Pizza Architecture* extends the family with vertical slicing. See @sec-pizza.
 
 **Khepri**
 :   The Raft-replicated KV store underlying *reckon-db*, written by the RabbitMQ team. Provides the tree-shaped data model and transactional semantics on which reckon-db builds its event store. See @sec-reckon-db.
@@ -119,7 +119,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The Codex's structural shape for a *Division*: the *inverted architecture* family plus orthogonal *vertical slicing*. Rings are *CMD*, *PRJ*, *QRY* around the *event store*; *Desks* are wedges that cut all rings. See @sec-pizza.
 
 **pg**
-:   Erlang's process-group registry (`pg` module), used for *intra-Division* event delivery — cheap, in-VM, ephemeral. Distinct from the *mesh*, which is inter-Division. See @sec-pipelines.
+:   Erlang's process-group registry (`pg` module), used for *intra-Division* event delivery; cheap, in-VM, ephemeral. Distinct from the *mesh*, which is inter-Division. See @sec-pipelines.
 
 **PRJ**
 :   The projection-side *Department*. Subscribes to events, materialises read-models. Typically fused into the *QRY* application but logically distinct. See @sec-pizza.
@@ -137,7 +137,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The Raft consensus library underlying *Khepri* and therefore *reckon-db*. An Erlang implementation of the Raft protocol [@ongaro2014raft] developed by the RabbitMQ team. See @sec-reckon-db.
 
 **Reckon Cycle**
-:   The ten-stage software-development lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline — back-arrows are normal. Each stage is itself a *Dossier*; the architecture applies recursively to itself. See @sec-cycle.
+:   The ten-stage software-development lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline; back-arrows are normal. Each stage is itself a *Dossier*; the architecture applies recursively to itself. See @sec-cycle.
 
 **reckon-db**
 :   The event store at the centre of every *Pizza*. Built on *Khepri* and *Ra*. Provides the two consistency primitives (*stream-version*, *DCB*), the subscription mechanism, snapshots, and the cluster shape. See @sec-reckon-db.
@@ -155,7 +155,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The canonical Protocol Buffers contract for *reckon-gateway*. Code-free; consumed at build time by every SDK. The single source of truth for the wire shape. See @sec-gateway.
 
 **Replay**
-:   Rebuilding state from the *append-only log* by reading the events in order and folding them. The property that makes event sourcing trustworthy — any view can be regenerated from the events. See @sec-why.
+:   Rebuilding state from the *append-only log* by reading the events in order and folding them. The property that makes event sourcing trustworthy; any view can be regenerated from the events. See @sec-why.
 
 **Saga**
 :   The Garcia-Molina pattern for long-running, multi-step coordination that may need compensation. The Codex uses the term *Process Manager* instead, which carries the same mechanics with a structural home (sibling slice in the target Division's *CMD*). See @sec-pipelines.
@@ -167,16 +167,16 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   In a *Decision*, the highest seq the caller has observed for events matching its tag filter. The conditional-append rejects the write if any matching event has a seq strictly above the cutoff. The sentinel `-1` means "I have observed nothing yet". See @sec-dossiers.
 
 **Slice / Vertical slice**
-:   A folder containing every artefact for one capability — command, event, handler, projection — together. The slicing dimension of *Pizza Architecture*. *Desk* is the architectural term; *slice* is the structural term; they refer to the same thing. See @sec-pizza.
+:   A folder containing every artefact for one capability (command, event, handler, projection) together. The slicing dimension of *Pizza Architecture*. *Desk* is the architectural term; *slice* is the structural term; they refer to the same thing. See @sec-pizza.
 
 **Slip**
 :   A single event inside a *Dossier*. The metaphor: the Dossier is a paper folder; the slips are the documents inside. The term emphasises the per-event-as-record framing.
 
 **Snapshot**
-:   A periodic save of an aggregate's folded state, keyed by stream version. An optimisation, not a primary record — discarding a snapshot and rebuilding from events produces the same result. See @sec-reckon-db.
+:   A periodic save of an aggregate's folded state, keyed by stream version. An optimisation, not a primary record; discarding a snapshot and rebuilding from events produces the same result. See @sec-reckon-db.
 
 **Store**
-:   The unit of *reckon-db* deployment — typically one per *Division*, sometimes more. Each store is a distinct Ra group with its own leader, its own disk path, its own event log. See @sec-reckon-db.
+:   The unit of *reckon-db* deployment; typically one per *Division*, sometimes more. Each store is a distinct Ra group with its own leader, its own disk path, its own event log. See @sec-reckon-db.
 
 **Stream**
 :   The per-*Dossier* append point in *reckon-db*. The stream's version is the unit of stream-version optimistic concurrency. One Dossier, one stream; multiple Dossiers, multiple streams. See @sec-reckon-db.
@@ -194,7 +194,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   A recursive predicate over an event's tag set. Four shapes: `any_of` and `all_of` (leaf shapes over tag lists), `and_` and `or_` (compound shapes over sub-filters). The consistency context of a *Decision*. Encoded in proto as a recursive oneof. See @sec-dossiers, @sec-gateway.
 
 **TagList**
-:   The Protocol Buffers message type holding a flat list of tag strings — used by the `match_any` and `match_all` variants of *TagFilter*. See @sec-gateway.
+:   The Protocol Buffers message type holding a flat list of tag strings; used by the `match_any` and `match_all` variants of *TagFilter*. See @sec-gateway.
 
 **Tamper-resistance**
 :   The property that unauthorised modification of stored events is detectable. Provided by the *HMAC chain*. See @sec-reckon-db.
@@ -203,7 +203,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   See *Slice*.
 
 **Walking skeleton**
-:   Alistair Cockburn's term for an end-to-end thin slice deployed on day one of a project — every stage of the *Reckon Cycle* exercised at minimal scope. Adopted by the Codex as the discipline for starting any new Division. See @sec-cycle.
+:   Alistair Cockburn's term for an end-to-end thin slice deployed on day one of a project; every stage of the *Reckon Cycle* exercised at minimal scope. Adopted by the Codex as the discipline for starting any new Division. See @sec-cycle.
 
 **Wheel**
-:   The Codex's mental image for the *Reckon Cycle* — a cycle with back-arrows, turned as many times as the work demands. Contrasts with the pipeline mental image. See @sec-cycle.
+:   The Codex's mental image for the *Reckon Cycle*; a cycle with back-arrows, turned as many times as the work demands. Contrasts with the pipeline mental image. See @sec-cycle.

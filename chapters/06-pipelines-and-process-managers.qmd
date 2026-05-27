@@ -2,12 +2,12 @@
 
 Two consistency primitives are now on the table. The Dossier handles 90% of the work; the Decision handles most of the rest. A small but important set of problems remains:
 
-- A command needs facts that live in a *different* Dossier, or even a different Division, before it can decide. The Dossier's `apply/2` callback cannot reach out to read those facts — doing so breaks replay (see below). The Decision pattern is too heavy for a single, locally-scoped, cross-entity lookup.
-- A command in one Division must trigger a command in another Division — the Catalogue registers a book; the Lending Division needs to know the book exists before anyone can borrow it. Direct calls across Divisions create coupling that pushes both teams to coordinate every change.
+- A command needs facts that live in a *different* Dossier, or even a different Division, before it can decide. The Dossier's `apply/2` callback cannot reach out to read those facts; doing so breaks replay (see below). The Decision pattern is too heavy for a single, locally-scoped, cross-entity lookup.
+- A command in one Division must trigger a command in another Division; the Catalogue registers a book; the Lending Division needs to know the book exists before anyone can borrow it. Direct calls across Divisions create coupling that pushes both teams to coordinate every change.
 
 This chapter provides two structural pieces that handle these cases without sagas, without distributed transactions, and without breaking the replay invariant that makes event sourcing trustworthy.
 
-The pieces are **command pipelines** (for the first case) and **process managers** (for the second). Both are slices in the Pizza Architecture sense — folders with screaming names, all artifacts together — and both preserve the determinism that the rest of the book has been carefully building.
+The pieces are **command pipelines** (for the first case) and **process managers** (for the second). Both are slices in the Pizza Architecture sense (folders with screaming names, all artifacts together) and both preserve the determinism that the rest of the book has been carefully building.
 
 ## The cardinal sin: reading from read models during event flow
 
@@ -30,7 +30,7 @@ The function `query_borrower_open_loans/1` reaches into a read-model (probably a
 
 The Dossier's `apply/2` callback is run *every time the Dossier is rebuilt from history*. The framework loads the events, calls `apply/2` for each one in order, and ends with the current state. Replay is the operation that makes event sourcing trustworthy: any state in the system can be regenerated from the events. *Replay is deterministic only if `apply/2` is deterministic.*
 
-The naïve code is not deterministic. The first time `apply/2` runs (when the event is being appended), the read-model reflects the world *at that moment*. The second time `apply/2` runs (a week later, when the Dossier is being rebuilt for a different reason), the read-model reflects the world *a week later* — possibly with the Borrower having additional open loans, possibly with that read-model rebuilt from scratch with a different schema, possibly with the read-model still warming up after a node restart and returning stale or empty data.
+The naïve code is not deterministic. The first time `apply/2` runs (when the event is being appended), the read-model reflects the world *at that moment*. The second time `apply/2` runs (a week later, when the Dossier is being rebuilt for a different reason), the read-model reflects the world *a week later*; possibly with the Borrower having additional open loans, possibly with that read-model rebuilt from scratch with a different schema, possibly with the read-model still warming up after a node restart and returning stale or empty data.
 
 What was a "valid loan issuance" at write time becomes an `error(too_many_loans)` at replay time. The Dossier crashes. The system cannot rebuild. The invariant the engineer was trying to defend has *destroyed* the audit log.
 
@@ -40,7 +40,7 @@ This is the cardinal sin of event-sourced architectures: reading from read-model
 
 A command pipeline pre-loads everything the Dossier needs *before* the Dossier sees the command, attaches the result to the command (typically in a metadata map), and hands the Dossier a self-contained decision input.
 
-The pipeline runs *outside* the aggregate process, *at the slice boundary*, in dedicated code that is allowed to read from anywhere. The Dossier's `execute/2` callback receives the enriched command. The `decide` step inside `execute/2` consults the command's metadata, not the live read-model. The Dossier remains pure; the read happens once, at write time, and is *captured in the resulting event* — anyone replaying the event sees not just the action but the *cross-entity facts that justified it*.
+The pipeline runs *outside* the aggregate process, *at the slice boundary*, in dedicated code that is allowed to read from anywhere. The Dossier's `execute/2` callback receives the enriched command. The `decide` step inside `execute/2` consults the command's metadata, not the live read-model. The Dossier remains pure; the read happens once, at write time, and is *captured in the resulting event*; anyone replaying the event sees not just the action but the *cross-entity facts that justified it*.
 
 ```erlang
 %% In load_borrower_open_loans.erl -- a pipeline step
@@ -85,7 +85,7 @@ assert_borrower_is_active        (cross-entity read)
   emits loan_issued_v1 with those facts captured ]
 ```
 
-Each step has one job. Each step's name screams what it loads. A reviewer of the slice can read the pipeline's `init/0` function and know exactly which cross-entity facts the command depends on — they are listed, in order, as pipeline steps.
+Each step has one job. Each step's name screams what it loads. A reviewer of the slice can read the pipeline's `init/0` function and know exactly which cross-entity facts the command depends on; they are listed, in order, as pipeline steps.
 
 The resulting event carries the cross-entity facts forward:
 
@@ -137,7 +137,7 @@ That's the whole module. The integration contract between *issue_loan* and the r
 
 **Counterclaim:** *Pipelines are just functions called before the aggregate. The structural commitment is decoration.*
 
-**Response:** They are just functions, named and ordered. The decoration is the point. A function called from inside `execute/2` could do the same reads — but its presence is hidden, its dependencies are implicit, and its testability is coupled to the aggregate's testability. A pipeline step is named, lives in its own module, ships with its own unit tests, and appears in the slice's `steps/0` list as visible documentation. The structural commitment is to *making the integration contract visible*, not to inventing a new mechanism. The function-vs-step distinction is precisely the function-vs-named-and-traced-step distinction. Visibility costs nothing and pays continuously.
+**Response:** They are just functions, named and ordered. The decoration is the point. A function called from inside `execute/2` could do the same reads; but its presence is hidden, its dependencies are implicit, and its testability is coupled to the aggregate's testability. A pipeline step is named, lives in its own module, ships with its own unit tests, and appears in the slice's `steps/0` list as visible documentation. The structural commitment is to *making the integration contract visible*, not to inventing a new mechanism. The function-vs-step distinction is precisely the function-vs-named-and-traced-step distinction. Visibility costs nothing and pays continuously.
 :::
 
 The cost of pipelines is one tiny consistency hazard: the cross-entity read can race against the underlying truth. The pipeline step reads "Borrower #42 has 3 open loans" at time T; the aggregate's `execute/2` sees that fact at time T + 1ms; in the worst case another writer increments the count between T and T + 1ms. The remedies are routine: idempotency keys on the command (the second arrival sees the same enrichment and is rejected by the Dossier's stream-version check), and reconciliation passes for the rare cases where the race produces a stale decision. The pipeline does *not* claim distributed-transaction consistency. It claims *visible, captured-in-the-event, cross-entity decision-making* with bounded staleness.
@@ -146,9 +146,9 @@ The cost of pipelines is one tiny consistency hazard: the cross-entity read can 
 
 Pipelines handle cross-entity reads inside a single decision. *Process managers* handle work that spans Divisions.
 
-The Catalogue Division registers a book. A `book_registered_v1` event lands in Catalogue's event store. The Lending Division needs to know — books that are not registered cannot be loaned. The naïve approach is: when Catalogue's command handler succeeds, *also call* Lending's `track_loanable_book` command directly, perhaps via an HTTP call to Lending's API.
+The Catalogue Division registers a book. A `book_registered_v1` event lands in Catalogue's event store. The Lending Division needs to know; books that are not registered cannot be loaned. The naïve approach is: when Catalogue's command handler succeeds, *also call* Lending's `track_loanable_book` command directly, perhaps via an HTTP call to Lending's API.
 
-This is wrong for the same reason that direct database joins between bounded contexts are wrong. The Catalogue Division now depends on Lending's API. Changes to Lending's API force changes to Catalogue. The two teams' release cycles couple. The Catalogue handler, which should be focused on Catalogue's own concerns, now has a branch of error handling for "what if Lending is unavailable?" — a concern that belongs to Lending, not Catalogue.
+This is wrong for the same reason that direct database joins between bounded contexts are wrong. The Catalogue Division now depends on Lending's API. Changes to Lending's API force changes to Catalogue. The two teams' release cycles couple. The Catalogue handler, which should be focused on Catalogue's own concerns, now has a branch of error handling for "what if Lending is unavailable?"; a concern that belongs to Lending, not Catalogue.
 
 The structural answer is the **process manager**. A process manager:
 
@@ -206,17 +206,17 @@ handle_fact(#book_registered_v1{
 
 Three things to notice.
 
-**The PM is itself a slice.** Folder name (`on_book_registered_track_loanable`) screams what it does. The naming convention is `on_{source_event}_{verb}_{target}` — a developer browsing Lending's CMD app sees the folder, reads the name, and knows: *this is where Lending reacts to Catalogue's book_registered facts*. Discoverability is at the filesystem level. No "integrations" subdirectory, no central event-routing table, no decoder ring. The integration is where the integration's name says it is.
+**The PM is itself a slice.** Folder name (`on_book_registered_track_loanable`) screams what it does. The naming convention is `on_{source_event}_{verb}_{target}`; a developer browsing Lending's CMD app sees the folder, reads the name, and knows: *this is where Lending reacts to Catalogue's book_registered facts*. Discoverability is at the filesystem level. No "integrations" subdirectory, no central event-routing table, no decoder ring. The integration is where the integration's name says it is.
 
-**The PM lives in the target Division.** This is a deliberate choice that deserves justification. The PM needs to know how to build the target command (`track_loanable_book_v1`); it needs access to the target's command-dispatch surface; its failures concern the target. Locating it in the target Division gives it the dependencies it needs without exposing them to the source. The source Division (Catalogue) publishes a fact; it does not know or care who consumes that fact. New consumers can be added — a reporting Division, an analytics Division — without Catalogue changing.
+**The PM lives in the target Division.** This is a deliberate choice that deserves justification. The PM needs to know how to build the target command (`track_loanable_book_v1`); it needs access to the target's command-dispatch surface; its failures concern the target. Locating it in the target Division gives it the dependencies it needs without exposing them to the source. The source Division (Catalogue) publishes a fact; it does not know or care who consumes that fact. New consumers can be added (a reporting Division, an analytics Division) without Catalogue changing.
 
-**The PM produces *commands*, not events directly.** This matters. If the PM wrote events directly to Lending's event store, it would bypass Lending's validation, idempotency, and authorisation. By dispatching a command, the PM enters Lending through the same door as any other client — Lending's command handler validates, dedups, authorises, and emits the events. The PM is a *consumer-side adapter*, not a privileged writer.
+**The PM produces *commands*, not events directly.** This matters. If the PM wrote events directly to Lending's event store, it would bypass Lending's validation, idempotency, and authorisation. By dispatching a command, the PM enters Lending through the same door as any other client; Lending's command handler validates, dedups, authorises, and emits the events. The PM is a *consumer-side adapter*, not a privileged writer.
 
 ## Integration transports
 
 A PM subscribes to events from elsewhere. The "elsewhere" requires a transport. The Codex's stack offers two:
 
-**pg** (Erlang's process-group registry) is for *intra-Division* event delivery. Within one Division — across multiple Erlang applications that share a node — pg is the in-VM publish/subscribe channel. It is cheap, fast, and ephemeral; subscribers receive events while connected and miss them while disconnected. pg is appropriate when the publisher and consumer share a deployment unit.
+**pg** (Erlang's process-group registry) is for *intra-Division* event delivery. Within one Division (across multiple Erlang applications that share a node) pg is the in-VM publish/subscribe channel. It is cheap, fast, and ephemeral; subscribers receive events while connected and miss them while disconnected. pg is appropriate when the publisher and consumer share a deployment unit.
 
 **mesh** is for *inter-Division* integration. The mesh is a content-addressed routing layer (the running stack uses *macula*) that delivers durable facts across nodes, organisations, and network boundaries. A PM that crosses Divisions subscribes to a mesh topic and receives integration facts asynchronously, with at-least-once delivery semantics.
 
@@ -233,28 +233,28 @@ The translation gives Catalogue freedom to refactor. Internal event field rename
 
 **Counterclaim:** *This is just sagas. Call it sagas.*
 
-**Response:** A process manager *is* a saga, in the Garcia-Molina sense. The Codex uses "process manager" because the term carries less mythology and because PMs in the Codex's framing have a stable, structural home — they are sibling slices in the target Division's CMD Department. Some saga literature treats them as "transient coordinators" that exist only for the duration of a particular cross-context transaction; that framing makes them harder to locate, harder to monitor, harder to test. Naming them PMs and treating them as first-class long-lived slices is a stylistic choice that earns its keep at filesystem-discovery time.
+**Response:** A process manager *is* a saga, in the Garcia-Molina sense. The Codex uses "process manager" because the term carries less mythology and because PMs in the Codex's framing have a stable, structural home; they are sibling slices in the target Division's CMD Department. Some saga literature treats them as "transient coordinators" that exist only for the duration of a particular cross-context transaction; that framing makes them harder to locate, harder to monitor, harder to test. Naming them PMs and treating them as first-class long-lived slices is a stylistic choice that earns its keep at filesystem-discovery time.
 :::
 
 ## Saga compensation
 
 A PM dispatches a command; the command might fail. What then?
 
-For commands that retry safely — idempotent ones — the PM retries. The mesh's at-least-once semantics already mean the PM may receive a fact more than once; idempotency keys on the target command handle the duplicate-delivery case. Retries are routine.
+For commands that retry safely (idempotent ones) the PM retries. The mesh's at-least-once semantics already mean the PM may receive a fact more than once; idempotency keys on the target command handle the duplicate-delivery case. Retries are routine.
 
-For commands that fail unrecoverably — a domain error, a missing prerequisite, a fundamental incompatibility — the PM has two options. It can give up, log, and emit a *compensation event* in its own Division ("we tried to track this book and we couldn't"). It can also attempt to compensate upstream by issuing a counter-command back to the source Division, if the integration agreement allows. Both options are slice-level decisions. The PM owns the failure model; the Division supervisor owns escalation; the Codex does not prescribe one universal answer.
+For commands that fail unrecoverably (a domain error, a missing prerequisite, a fundamental incompatibility) the PM has two options. It can give up, log, and emit a *compensation event* in its own Division ("we tried to track this book and we couldn't"). It can also attempt to compensate upstream by issuing a counter-command back to the source Division, if the integration agreement allows. Both options are slice-level decisions. The PM owns the failure model; the Division supervisor owns escalation; the Codex does not prescribe one universal answer.
 
-What the Codex *does* prescribe: the failure pathway is named. A PM has a `handle_fact_failure/3` callback or equivalent; when commands fail, that callback runs; whatever it does — emit a compensation event, drop, retry — is *visible code in the slice*. Hidden failure handling is forbidden. A PM that silently drops failures is broken; a PM that explicitly logs and continues is fine; a PM that issues compensation events is fine. The discipline is not which strategy, but that the strategy is in the code, not in folklore.
+What the Codex *does* prescribe: the failure pathway is named. A PM has a `handle_fact_failure/3` callback or equivalent; when commands fail, that callback runs; whatever it does (emit a compensation event, drop, retry) is *visible code in the slice*. Hidden failure handling is forbidden. A PM that silently drops failures is broken; a PM that explicitly logs and continues is fine; a PM that issues compensation events is fine. The discipline is not which strategy, but that the strategy is in the code, not in folklore.
 
 ## What this enables
 
 With Dossiers, Decisions, pipelines, and process managers, the architecture covers the full range of write-side coordination problems:
 
-- **Single-Dossier invariants** — Dossier with stream-version concurrency (@sec-dossiers).
-- **Cross-entity invariants in one Division** — pipeline pre-loads cross-entity facts; Dossier decides on enriched command.
-- **Cross-cutting invariants without a Dossier shape** — Decision with tag-filter concurrency (@sec-dossiers).
-- **Cross-Division coordination** — Process Manager in the target Division consumes integration facts and dispatches local commands.
+- **Single-Dossier invariants**; Dossier with stream-version concurrency (@sec-dossiers).
+- **Cross-entity invariants in one Division**; pipeline pre-loads cross-entity facts; Dossier decides on enriched command.
+- **Cross-cutting invariants without a Dossier shape**; Decision with tag-filter concurrency (@sec-dossiers).
+- **Cross-Division coordination**; Process Manager in the target Division consumes integration facts and dispatches local commands.
 
 Read sides are decoupled from write sides through subscriptions and the QRY/PRJ Departments (@sec-pizza). Replay determinism is preserved because no read happens inside event flow. Audit trails are complete because cross-entity facts captured at decision time are recorded in the events themselves.
 
-The remaining piece is *time*. So far the architecture has been described as if it lived in an eternal present — Divisions process commands, Dossiers append events, PMs translate. Real systems have phases: inception, design, planning, generation, testing, deployment, monitoring, rescue. Real systems also have *cycles* — Rescue at month six reveals an architectural flaw that sends the work back to Design. The next chapter (@sec-cycle) names the ten stages of this cycle, treats each one as a long-lived process with its own Dossier shape, and shows how the architectural commitments of Part I scale up to organise *building software* itself, not just the software being built.
+The remaining piece is *time*. So far the architecture has been described as if it lived in an eternal present; Divisions process commands, Dossiers append events, PMs translate. Real systems have phases: inception, design, planning, generation, testing, deployment, monitoring, rescue. Real systems also have *cycles*; Rescue at month six reveals an architectural flaw that sends the work back to Design. The next chapter (@sec-cycle) names the ten stages of this cycle, treats each one as a long-lived process with its own Dossier shape, and shows how the architectural commitments of Part I scale up to organise *building software* itself, not just the software being built.

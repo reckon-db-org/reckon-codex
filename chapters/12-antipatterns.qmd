@@ -1,6 +1,6 @@
 # Antipatterns {#sec-antipatterns}
 
-This chapter is a catalogue, not an essay. Each entry describes one mistake the Codex has encountered often enough to name. The mistakes are not personal failures; they are *common reasoning failures* — moves that look right in isolation and produce systems that hurt later.
+This chapter is a catalogue, not an essay. Each entry describes one mistake the Codex has encountered often enough to name. The mistakes are not personal failures; they are *common reasoning failures*; moves that look right in isolation and produce systems that hurt later.
 
 Each entry follows the same template:
 
@@ -11,7 +11,7 @@ Each entry follows the same template:
 
 Consult this chapter when something feels wrong in a slice you are reviewing. Read it straight through if you are new to the architecture; the catalogue functions as a list of mistakes you can now avoid having to make yourself.
 
-## Event sourcing — aggregates, events, envelopes
+## Event sourcing; aggregates, events, envelopes
 
 ### Reading from read-models during event flow
 
@@ -36,7 +36,7 @@ apply(#loan_issued_v1{borrower_id = BId} = E, State) ->
 
 **Pattern.** A Dossier's first stream entry is a routine update event, not a distinct birth event. The Dossier's "creation" is implied by the absence of prior events rather than recorded explicitly.
 
-**Why it tempts.** The birth event seems redundant — "registered" or "issued" already implies the entity began existing. Why have a separate `*_initiated_v1`?
+**Why it tempts.** The birth event seems redundant; "registered" or "issued" already implies the entity began existing. Why have a separate `*_initiated_v1`?
 
 **What breaks.** Projections cannot distinguish "this Dossier was just created" from "this Dossier was updated"; metadata that should be set once at birth (created_by, created_at) is mixed with metadata that changes over time. Audit replay produces ambiguous reconstructions of when the entity came into being.
 
@@ -44,7 +44,7 @@ apply(#loan_issued_v1{borrower_id = BId} = E, State) ->
 
 ### Flattening event envelopes into business data
 
-**Pattern.** A projection reaches into the event envelope's plumbing — `event_id`, `position`, `timestamp` — and stores those fields in the business read-model alongside genuine business data.
+**Pattern.** A projection reaches into the event envelope's plumbing (`event_id`, `position`, `timestamp`) and stores those fields in the business read-model alongside genuine business data.
 
 **Why it tempts.** The envelope fields are right there; they look like data; storing them feels like preserving information.
 
@@ -69,7 +69,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 
 **Fix.** Every write to a Dossier's stream goes through the aggregate. If a worker needs to cause an event, it dispatches a command and the aggregate produces the event. The discipline is uniform: one stream, one aggregate, one validator.
 
-## Naming — names that do not scream
+## Naming; names that do not scream
 
 ### CRUD verbs in event-sourced commands
 
@@ -77,7 +77,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 
 **Why it tempts.** CRUD verbs are universal; every developer knows them; they require no domain understanding.
 
-**What breaks.** The event names communicate *that something changed in storage*, not *what happened in the business*. Projections handling `loan_updated_v1` must branch on payload to know which kind of update — was the loan renewed, returned, flagged overdue, written off? The branch could have been the event type. The audit trail says "the loan was updated, again, again, again" instead of "the loan was renewed, returned".
+**What breaks.** The event names communicate *that something changed in storage*, not *what happened in the business*. Projections handling `loan_updated_v1` must branch on payload to know which kind of update; was the loan renewed, returned, flagged overdue, written off? The branch could have been the event type. The audit trail says "the loan was updated, again, again, again" instead of "the loan was renewed, returned".
 
 **Fix.** Use business verbs: `register_user`, `renew_loan`, `archive_membership`. The verb names the actual change; the event inherits the verb in past tense. See @sec-screaming for the full discipline.
 
@@ -89,7 +89,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 
 **What breaks.** The suffix hides the meaning. A reader opening `LoanService` learns nothing they did not already suspect; they must open the file to find out what it does. The folder-walk test (@sec-screaming) fails. Onboarding takes longer.
 
-**Fix.** Name modules for the business outcome they produce. *Process* is not what code does for a living; *process orders*, *fulfil shipments*, *issue refunds* — these are what code does. Technical names are acceptable only at the *crust* of the Pizza, where infrastructure adapters genuinely have technical concerns.
+**Fix.** Name modules for the business outcome they produce. *Process* is not what code does for a living; *process orders*, *fulfil shipments*, *issue refunds*; these are what code does. Technical names are acceptable only at the *crust* of the Pizza, where infrastructure adapters genuinely have technical concerns.
 
 ### Generic lifecycle verbs
 
@@ -101,7 +101,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 
 **Fix.** Each long-lived process has its own lifecycle verbs that name *what it does at each transition*. Planning has `open`, `shelve`, `resume`, `conclude`. Rescue has `declare`, `mitigate`, `resolve`, `postmortem`. The verbs differ because the work differs.
 
-## Structure — code organisation
+## Structure; code organisation
 
 ### Horizontal layer folders
 
@@ -109,7 +109,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 
 **Why it tempts.** Frameworks scaffold projects this way. It looks consistent.
 
-**What breaks.** Each capability is scattered across many folders. To understand "issuing a loan" the reader must trace through `controllers/LoanController.java` → `services/LoanService.java` → `repositories/LoanRepository.java` → `models/Loan.java` — files that also contain unrelated code for dozens of other capabilities. Changing one capability touches files in many folders; pull requests fan out; reviewers lose focus.
+**What breaks.** Each capability is scattered across many folders. To understand "issuing a loan" the reader must trace through `controllers/LoanController.java` → `services/LoanService.java` → `repositories/LoanRepository.java` → `models/Loan.java`; files that also contain unrelated code for dozens of other capabilities. Changing one capability touches files in many folders; pull requests fan out; reviewers lose focus.
 
 **Fix.** Vertical slicing (@sec-pizza). Each capability is one folder containing every artifact for that capability. The folder name screams the capability.
 
@@ -127,13 +127,13 @@ apps/cmd_lending/src/issue_loan/
 
 **Why it tempts.** The PM and the Desk it triggers are conceptually related; nesting them shows the relationship.
 
-**What breaks.** The PM is hidden inside the Desk's folder. A reviewer browsing the CMD app's top-level slice list does not see the PM. The integration point with the upstream Division becomes invisible at the filesystem level. The PM also no longer has its own supervisor, idempotency story, or lifecycle — it inherits the Desk's.
+**What breaks.** The PM is hidden inside the Desk's folder. A reviewer browsing the CMD app's top-level slice list does not see the PM. The integration point with the upstream Division becomes invisible at the filesystem level. The PM also no longer has its own supervisor, idempotency story, or lifecycle; it inherits the Desk's.
 
 **Fix.** PMs are *sibling slices* in the target Division's CMD Department, one folder up from the Desks they may trigger. The folder name follows the convention `on_{source_event}_{verb}_{target}` (@sec-pipelines). Each PM owns its supervisor and its own slice; it appears in the CMD app's top-level slice list right alongside the Desks.
 
 ### Generic god modules
 
-**Pattern.** A single module that handles many capabilities — `LoanManager`, `OrderProcessor`, `UserService`. Its public functions span the Division's surface; its file is hundreds or thousands of lines.
+**Pattern.** A single module that handles many capabilities; `LoanManager`, `OrderProcessor`, `UserService`. Its public functions span the Division's surface; its file is hundreds or thousands of lines.
 
 **Why it tempts.** Related operations seem to belong together; the module name groups them.
 
@@ -141,7 +141,7 @@ apps/cmd_lending/src/issue_loan/
 
 **Fix.** Each capability is its own slice with its own modules. Shared concerns (helpers used by many slices) live in adjacent shared libraries, not in a god module within a slice's folder.
 
-## Projections — read models
+## Projections; read models
 
 ### Separate projections racing on a shared table
 
@@ -149,7 +149,7 @@ apps/cmd_lending/src/issue_loan/
 
 **Why it tempts.** The read-model has columns that are naturally updated by different events; building one projection per column seems modular.
 
-**What breaks.** Race conditions on the shared table. Projection A writes a row from one event; projection B is about to update the same row from a different event; the order of arrival determines what's seen. Worse, if event A precedes event B in the log but B's projection finishes first, the read-model is briefly inconsistent — and a downstream query might catch it in that state.
+**What breaks.** Race conditions on the shared table. Projection A writes a row from one event; projection B is about to update the same row from a different event; the order of arrival determines what's seen. Worse, if event A precedes event B in the log but B's projection finishes first, the read-model is briefly inconsistent; and a downstream query might catch it in that state.
 
 **Fix.** Merge projections that write to the same table into one projection that subscribes to all the relevant event types. The merged projection serialises its writes; race-free. Use separate projections only when they write to *different* tables.
 
@@ -173,7 +173,7 @@ apps/cmd_lending/src/issue_loan/
 
 **Fix.** Projections subscribe to the event log asynchronously. Read-models are eventually consistent. For commands that need session-level consistency, the command returns the *new aggregate state* so the caller does not depend on read-model timing. See @sec-pipelines for the session-level pattern.
 
-## Integration — subscriptions, messaging, process managers
+## Integration; subscriptions, messaging, process managers
 
 ### Bridging every domain event to the mesh
 
@@ -187,7 +187,7 @@ apps/cmd_lending/src/issue_loan/
 
 ### Side effects on hope, not on fact
 
-**Pattern.** A handler dispatches an asynchronous command and immediately performs a side effect that depends on the command's success — sending a confirmation email, charging a card, releasing inventory — without waiting for the resulting event.
+**Pattern.** A handler dispatches an asynchronous command and immediately performs a side effect that depends on the command's success (sending a confirmation email, charging a card, releasing inventory) without waiting for the resulting event.
 
 **Why it tempts.** Asynchronous dispatch is faster than synchronous; the user gets a faster response.
 
@@ -201,11 +201,11 @@ apps/cmd_lending/src/issue_loan/
 
 **Why it tempts.** It is the most obvious way to make B do something when A does something.
 
-**What breaks.** A now depends on B's API surface, B's availability, B's error semantics. Changes to B require coordinated changes to A. B's downtime takes A down. The two Divisions' release cycles couple. The integration is invisible — neither codebase has a clear place where the cross-Division interaction lives.
+**What breaks.** A now depends on B's API surface, B's availability, B's error semantics. Changes to B require coordinated changes to A. B's downtime takes A down. The two Divisions' release cycles couple. The integration is invisible; neither codebase has a clear place where the cross-Division interaction lives.
 
 **Fix.** A emits an integration fact; B's CMD app contains a sibling-slice Process Manager that subscribes to that fact and dispatches the local command. The PM is the *single explicit integration point*; A and B both stay autonomous. See @sec-pipelines.
 
-## Erlang / OTP — runtime gotchas
+## Erlang / OTP; runtime gotchas
 
 ### gen_server self-call deadlock
 
@@ -234,9 +234,9 @@ apps/cmd_lending/src/issue_loan/
 
 **What breaks.** Under load, producers fan in faster than the worker drains. The mailbox grows; the worker processes ticks that are no longer relevant; the system falls behind.
 
-**Fix.** At the top of `handle_info(tick, State)`, drain all queued ticks before processing: `receive tick -> ok after 0 -> ok end` (looping). One tick processed per drain; old queued ticks dropped. The worker is idempotent — processing once or many times produces the same effect — so dropping is safe.
+**Fix.** At the top of `handle_info(tick, State)`, drain all queued ticks before processing: `receive tick -> ok after 0 -> ok end` (looping). One tick processed per drain; old queued ticks dropped. The worker is idempotent (processing once or many times produces the same effect) so dropping is safe.
 
-## Release — versioning, testing, packaging
+## Release; versioning, testing, packaging
 
 ### Forgetting to bump `.app.src` versions before tagging
 
@@ -276,6 +276,6 @@ apps/cmd_lending/src/issue_loan/
 
 ## What this enables
 
-The catalogue is short by design. The Codex has seen these mistakes; the Codex has also seen many more mistakes that were single-occurrence. The eighteen above appear in the catalogue because they recurred — across teams, codebases, years — and the recurrence indicated that the corresponding doctrine in Parts I and II needed an explicit countervailing entry.
+The catalogue is short by design. The Codex has seen these mistakes; the Codex has also seen many more mistakes that were single-occurrence. The eighteen above appear in the catalogue because they recurred (across teams, codebases, years) and the recurrence indicated that the corresponding doctrine in Parts I and II needed an explicit countervailing entry.
 
-The glossary in the next chapter collects the load-bearing vocabulary of the book in one place, alphabetised, with cross-references. The two chapters together — antipatterns and glossary — give the reader a reference layer to consult once they are working with the architecture and meeting its edges.
+The glossary in the next chapter collects the load-bearing vocabulary of the book in one place, alphabetised, with cross-references. The two chapters together (antipatterns and glossary) give the reader a reference layer to consult once they are working with the architecture and meeting its edges.
