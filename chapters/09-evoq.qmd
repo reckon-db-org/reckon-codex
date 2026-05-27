@@ -1,50 +1,278 @@
 # evoq {#sec-evoq}
 
+reckon-db (@sec-reckon-db) is an event store. It knows how to append, read, subscribe, snapshot, and replicate. It does *not* know what an aggregate is. It does not know how a projection should retry, how a process manager should compensate, how a command should be idempotent. These are framework concerns, and the Codex's stack places them in *evoq*.
+
+evoq is the framework that turns reckon-db's storage primitives into an ergonomic platform for event-sourced systems. Its central design choice is to express every role in the architecture as an Erlang *behaviour* — a compile-time contract that captures what a particular kind of slice must implement and what guarantees the runtime will provide in return. Twenty-one such behaviours together form the surface a Division's code interacts with.
+
+This chapter walks the load-bearing behaviours and explains the discipline that the framework's shape enforces.
+
+## Why behaviours
+
+A behaviour, in Erlang/OTP terms, is a module-level interface declaration plus a runtime that fills in the cross-cutting concerns. The user supplies callbacks (`init/1`, `handle_call/3`, `terminate/2`, etc.); the runtime supplies the surrounding logic (process spawning, message routing, supervision integration). The OTP behaviours (`gen_server`, `gen_statem`, `supervisor`) are the canonical examples.
+
+evoq extends the pattern to domain-level roles. *An aggregate is a behaviour.* *A projection is a behaviour.* *A process manager is a behaviour.* *A decision is a behaviour.* Each role has callbacks the user implements and a runtime that handles the rest.
+
+The benefits of this approach:
+
+**The contract is the documentation.** A new developer opens the project, finds a module declaring `-behaviour(evoq_aggregate).`, and the compiler enforces that the module implements `init/1`, `execute/2`, and `apply/2`. The shape of the module is *known* before any code is read. The behaviour declaration is the doorway.
+
+**Substitution is a one-line change.** The event-store backend is itself a behaviour (`evoq_adapter`). reckon-db's implementation is `reckon_evoq_adapter`; in-memory test implementations exist as well. Switching backends for a test suite is a `sys.config` line; switching backends in production is a deployment-time decision, not an architectural one.
+
+**The runtime carries the discipline.** Retry-with-backoff, idempotency-key checking, dead-letter handling, telemetry emission, memory-pressure-aware passivation — these are cross-cutting concerns that would otherwise be scattered across every slice. They live in the runtime, behind the behaviour callbacks, where they are written once and applied uniformly.
+
+The cost is straightforward: behaviour-shaped frameworks impose ceremony. A slice that wants to be an aggregate must declare `-behaviour(evoq_aggregate).`, must export the required callbacks, must accept the runtime's lifecycle invariants. Hand-rolled solutions can avoid the ceremony. The Codex's discipline — Demon 39 in the antipatterns chapter ahead — is that bypassing evoq behaviours with raw `gen_server` is a recurring source of subtle bugs (event-type filter mismatches, missing checkpoints, race conditions on idempotency), and the ceremony is the price for the discipline.
+
+## Aggregates: the Dossier's brain
+
+The `evoq_aggregate` behaviour hosts a Dossier's command-handling logic. A Loan aggregate, a Membership aggregate, an Order aggregate — each is one module that implements three callbacks:
+
+```erlang
+-module(loan_aggregate).
+-behaviour(evoq_aggregate).
+
+-export([init/1, execute/2, apply/2]).
+
+init(LoanId) ->
+    #loan_state{loan_id = LoanId, status = none}.
+
+execute(State, #issue_loan_v1{} = Cmd) ->
+    %% Decide whether the command can be accepted.
+    %% Returns {ok, [Event]} or {error, Reason}.
+    maybe_issue_loan:decide(State, Cmd);
+
+execute(State, #renew_loan_v1{} = Cmd) ->
+    maybe_renew_loan:decide(State, Cmd);
+
+execute(State, #return_loan_v1{} = Cmd) ->
+    maybe_return_loan:decide(State, Cmd).
+
+apply(#loan_issued_v1{} = Event, State) ->
+    State#loan_state{
+        status     = open,
+        issued_at  = Event#loan_issued_v1.issued_at,
+        due_date   = Event#loan_issued_v1.due_date,
+        renewals   = 0
+    };
+apply(#loan_renewed_v1{} = Event, State) ->
+    State#loan_state{
+        due_date   = Event#loan_renewed_v1.new_due_date,
+        renewals   = State#loan_state.renewals + 1
+    };
+apply(#loan_returned_v1{}, State) ->
+    State#loan_state{status = returned}.
+```
+
+Three callbacks; three responsibilities.
+
+**`init/1`** is the empty-state constructor. Called when the aggregate process starts with a Dossier id but no events yet known. Produces the initial state.
+
+**`execute/2`** is the command handler. Called when a command arrives. Receives the current state (rebuilt from history by `apply/2`) and the command. Returns `{ok, [Event]}` if the command is acceptable (with the events to append) or `{error, Reason}` if not. The slice's `maybe_*` modules — `maybe_issue_loan`, `maybe_renew_loan` — are usually delegated to from `execute/2`, keeping the aggregate's switch-on-command shape thin and the per-command decision logic local to its slice.
+
+**`apply/2`** is the state transition. Called for every event in history (during rehydration) and for every event the aggregate has just decided to emit (so the in-memory state stays consistent for subsequent commands). Must be *deterministic* and *pure* — `apply/2` is run every time the aggregate rebuilds itself, and any non-determinism produces inconsistent state across rebuilds.
+
+The runtime handles the rest: spawning the aggregate process when the first command arrives for a Dossier id; replaying events from reckon-db to rebuild state; dispatching commands; appending the resulting events (with the stream-version concurrency check); passivating the process when idle to free memory; resurrecting it on the next command.
+
+## The aggregate lifecycle
+
+An aggregate is a long-lived process with a configurable lifecycle:
+
+```
+   command arrives
+        │
+        ▼
+   (not yet running?) ──► spawn aggregate process
+        │
+        ▼
+   (no state yet?)   ──► load events from store, apply/2 over them
+        │
+        ▼
+   execute/2(state, cmd)
+        │
+        ▼
+   {ok, events} ──► append to store ──► apply/2 over the new events
+                    (stream-version       (state updated in memory)
+                     check enforced)
+        │
+        ▼
+   command/reply complete
+        │
+        ▼
+   idle ──► (timeout reached?) ──► passivate (release memory)
+        │
+        ▼
+   next command arrives ──► reload from store, resume
+```
+
+Two non-obvious aspects deserve attention.
+
+**Snapshots are an optimisation, not a primary path.** During the *load events from store* step, the runtime checks for a snapshot at the latest available version, restores from the snapshot, and replays only the events *after* it. This is transparent to the aggregate code; `apply/2` is not called for events before the snapshot. The snapshot mechanism is configured per-aggregate-type via the `evoq_snapshot_adapter` behaviour; reckon-db's snapshot support (@sec-reckon-db) provides the storage.
+
+**Passivation is memory-pressure-aware.** Aggregates have configurable TTLs (time-to-live since last command); the default is several minutes. Under memory pressure (the BEAM's heap is approaching configured thresholds), the runtime *shrinks* the effective TTL — aggregates passivate sooner, freeing memory at the cost of more frequent reload-from-store cycles. Under low memory pressure, TTLs lengthen and the cache stays warm. This adaptivity is invisible to user code; aggregates do not know or care.
+
+The combination — long-lived processes, snapshot-accelerated rehydration, adaptive passivation — produces a runtime that scales from one aggregate to tens of thousands within the same Erlang node, with bounded memory regardless of total aggregate count.
+
+## Projections: the read side's materialiser
+
+A projection consumes events and writes a read-model. The `evoq_projection` behaviour gives projections a structured shape:
+
+```erlang
+-module(loan_issued_to_loans).
+-behaviour(evoq_projection).
+
+-export([init/1, project/2, target/0]).
+
+init(_Opts) ->
+    {ok, #{started_at => erlang:system_time(millisecond)}}.
+
+target() -> loans.    %% the read-model id; SQLite table name
+
+project(#evoq_envelope{event = #loan_issued_v1{} = Event}, State) ->
+    Row = #{
+        loan_id     => Event#loan_issued_v1.loan_id,
+        borrower_id => Event#loan_issued_v1.borrower_id,
+        book_id     => Event#loan_issued_v1.book_id,
+        status      => <<"open">>,
+        due_date    => Event#loan_issued_v1.due_date,
+        issued_at   => Event#loan_issued_v1.issued_at
+    },
+    {ok, [{insert, loans, Row}], State}.
+```
+
+Two important things to notice.
+
+**The projection receives an `evoq_envelope`, not a raw event.** The envelope wraps the event with metadata the projection needs but should not have to dig out of the event payload — event_id (for idempotency), stream_id, version, position (for ordering), causation_id (for tracing). Reading raw records and reaching into the underlying data structure is *Demon 23* in the antipatterns catalogue (@sec-antipatterns). The envelope makes the discipline structural.
+
+**The projection returns *intent*, not action.** `{insert, loans, Row}` is a description of what the projection wants to do; the runtime performs the database operation. The separation matters for testing (intent is unit-testable without a real database), for batching (multiple projections targeting the same table can be batched by the runtime), and for backend pluggability (the same projection works against SQLite, PostgreSQL, or in-memory test stores).
+
+The runtime handles:
+
+- **Subscription bootstrap.** On startup, the projection's checkpoint is loaded from the checkpoint store; the runtime resumes from the position immediately after the checkpoint.
+- **Idempotency.** Every event in the envelope carries an event_id; the runtime tracks processed event_ids for each projection (in a small idempotency store) and skips events already handled. At-least-once delivery becomes effectively once-only processing.
+- **Checkpoint persistence.** After each batch of events is processed, the checkpoint is updated atomically with the database write — either both happen or neither does. Crash mid-batch leaves the checkpoint at the last committed position; restart resumes correctly.
+- **Retry and dead-letter handling.** If `project/2` returns `{error, Reason}`, the runtime retries with backoff. After a configurable number of failed retries, the event is moved to a dead-letter store with the error reason, and the projection continues with subsequent events (rather than blocking).
+
+## The Decision runtime
+
+@sec-dossiers covered the Decision pattern doctrinally; here is the runtime that implements it.
+
+`evoq_decision` is the behaviour for cross-cutting consistency decisions. Two required callbacks (`context/1` and `decide/2`) plus one optional (`retry_budget/0`):
+
+```erlang
+-module(reserve_isbn).
+-behaviour(evoq_decision).
+
+context(#{isbn := Isbn}) ->
+    {all_of, [<<"isbn:", Isbn/binary>>, <<"kind:reservation">>]}.
+
+decide(ContextEvents, #{isbn := Isbn, borrower_id := BId}) ->
+    case has_open_reservation(ContextEvents) of
+        true  -> {error, isbn_already_reserved};
+        false -> {ok, [reservation_event(Isbn, BId)]}
+    end.
+
+retry_budget() -> 5.
+```
+
+Dispatch goes through `evoq_decision_runtime:dispatch/3`, which implements the read-decide-write loop with bounded retry:
+
+```
+Budget = Mod:retry_budget()
+loop while Budget > 0:
+    Filter   = Mod:context(Command)
+    Context  = read events matching Filter from _dcb pseudo-stream
+    Cutoff   = max(Context.seq, or -1 if empty)
+    case Mod:decide(Context, Command) of
+        {error, R}    -> return {error, R}      (domain error: do not retry)
+        {ok, Events}  ->
+            case adapter:append_if_no_tag_matches(Store, Filter, Cutoff, Events) of
+                {ok, _}                           -> return {ok, Events}
+                {error, {context_changed, _}}     -> backoff(); continue
+                {error, R}                        -> return {error, R}
+            end
+    end
+    Budget := Budget - 1
+return {error, retry_budget_exhausted}
+```
+
+The runtime is the load-bearing detail. It enforces the *pure-decide* invariant (every retry re-runs `decide/2` with refreshed context), the *bounded-budget* invariant (the loop ends), and the *backoff* invariant (exponential with jitter, to prevent thundering herds). Slice code states *what* the Decision means; the runtime states *how* it operates.
+
+## Event handlers and process managers
+
+Two more behaviours handle reactive logic.
+
+**`evoq_event_handler`** is for *side effects* triggered by events — sending a notification, emitting a metric, integrating with an external system. Event handlers subscribe to event types, perform the side effect, and acknowledge. Like projections, they have retry, dead-letter, and idempotency support. Unlike projections, they typically do *not* write to a read-model; their effect is external (HTTP call, SMTP message, push notification).
+
+**`evoq_process_manager`** is the cross-Division coordinator described in @sec-pipelines. A PM subscribes to facts (typically from the mesh), translates them into commands, and dispatches the commands. The behaviour gives the PM a stateful place to live (intermediate state for multi-step coordination), retry mechanics, and compensation hooks. The naming convention (`on_{source_event}_{verb}_{target}` for the slice folder) is enforced socially, not by the framework — the discipline lives in the codebase's structure, not in the behaviour's signature.
+
+The distinction between event handlers and process managers is one of *direction*. Event handlers reach *outward* (call an external system); process managers reach *inward* (dispatch a command into another Division). Both subscribe; both retry; both checkpoint. The runtime is shared; the intent is different; the naming reflects the intent.
+
+## Adapters: pluggable backends
+
+The framework's portability comes from a small set of *adapter* behaviours that abstract over the storage substrate:
+
+- **`evoq_adapter`** — the event-store backend. Append, read, conditional-append (DCB). Implemented by `reckon_evoq_adapter` over reckon-db.
+- **`evoq_snapshot_adapter`** — the snapshot store. Save/load/delete. Implemented by `reckon_evoq_adapter`.
+- **`evoq_subscription_adapter`** — the subscription manager. Subscribe, ack, checkpoint. Implemented by `reckon_evoq_adapter`.
+- **`evoq_checkpoint_store`** — the projection checkpoint store. Implemented by reckon-db's snapshot facility.
+
+Substituting a backend means writing one module that implements the adapter behaviour and configuring evoq to use it. In-memory implementations exist for unit testing (events live in ETS, snapshots in a process dictionary). A future PostgreSQL backend would be one module away. The framework code does not know which backend it's running against.
+
 ::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
+## Counterclaim and response
+
+**Counterclaim:** *Why have evoq at all? Couldn't applications use reckon-db directly?*
+
+**Response:** They could. They would then implement aggregate rehydration, snapshot integration, projection checkpoint persistence, command idempotency, dead-letter handling, schema upcasting, and the rest of the cross-cutting concerns inline. The framework exists because these concerns are common to every Division, and writing them once in evoq is cheaper than writing them N times in the Divisions. The cost is the behaviour-shaped ceremony; the benefit is that every Division's slice code stays focused on *what the slice does*, not on *how event sourcing works*.
+
+The Codex has seen Divisions built without evoq. They are not bad systems. They are bigger systems, with more concepts in each slice, and harder onboarding curves for new developers (who must learn each team's homemade conventions instead of one framework's). evoq trades novelty for uniformity. The Codex recommends the trade.
 :::
 
-The framework on top of reckon-db. Aggregates, projections, subscriptions, snapshots — the artefacts that make a Division a Division.
+## The twenty-one behaviours, listed
 
-## What this chapter will cover
-
-### The 21 behaviours
-
-evoq is a collection of Erlang behaviours, each of which formalises one role in a Division. The chapter walks the load-bearing ones.
+Aggregates, projections, decisions, event handlers, and process managers are the load-bearing five. Sixteen more cover the rest of the framework's surface. The full list is below, grouped by role; full reference detail lives in the evoq documentation.
 
 | Behaviour | Role |
 |---|---|
 | `evoq_aggregate` | The Dossier's command-handling brain |
-| `evoq_decision` | The Decision pattern (Chapter 5) |
 | `evoq_projection` | A read-model materialiser |
-| `evoq_event_handler` | A consumer of events with retry / DLQ |
-| `evoq_process_manager` | A saga-style coordinator |
-| `evoq_adapter` | The event-store backend (`reckon_evoq` plugs reckon-db in) |
-| `evoq_subscription_adapter` | The subscription backend |
-| `evoq_snapshot_adapter` | The snapshot backend |
-| `evoq_checkpoint_store` | Where projection checkpoints live |
+| `evoq_decision` | The cross-cutting consistency primitive |
+| `evoq_event_handler` | Side effects on events (notify, integrate, alert) |
+| `evoq_process_manager` | Cross-Division coordinator |
+| `evoq_state_module` | Aggregate state with pluggable persistence (rare, for very large states) |
+| `evoq_command_middleware` | Wraps the dispatch path (auth, telemetry, tracing) |
+| `evoq_idempotency_store` | Persists processed command IDs |
+| `evoq_dead_letter_handler` | Receives events that exhausted their retry budget |
+| `evoq_upcaster` | Schema evolution: old event versions → current |
+| `evoq_event_envelope_codec` | Custom envelope serialisation (rarely overridden) |
+| `evoq_snapshot_policy` | When to take snapshots (per-aggregate-type, configurable) |
+| `evoq_telemetry_handler` | Custom telemetry handlers (override the default logger) |
+| `evoq_subscription_adapter` | Subscription backend |
+| `evoq_adapter` | Event-store backend |
+| `evoq_snapshot_adapter` | Snapshot backend |
+| `evoq_checkpoint_store` | Projection checkpoint backend |
+| `evoq_passivation_policy` | When to passivate aggregates (default is time-based + memory-pressure-aware) |
+| `evoq_command_router` | Custom command routing (for sharded deployments; rarely needed) |
+| `evoq_event_validator` | Pre-append validation (rarely overridden) |
+| `evoq_schema_registry` | Schema metadata for upcaster routing |
 
-Plus twelve more for less-frequently-extended roles (upcasters, middleware, idempotency stores, dead-letter handlers, etc.).
+Most teams interact with five to seven behaviours per Division: aggregate, projection, decision (sometimes), event handler (sometimes), process manager (when cross-Division), plus the adapter configuration (set once, in `sys.config`). The remaining behaviours are extension points used when the defaults are not enough — schema upcasters when events evolve, command middleware for auth/tracing, dead-letter handlers for non-routine failure flows.
 
-### Why behaviours
+## Discipline through behaviours
 
-- They are the *contract*, not the *implementation*. The Codex names what each role does; the behaviour is the Erlang artefact that captures the contract.
-- Substituting one implementation for another (different backend, different retry strategy) is a one-line dependency change.
-- Compile-time enforcement of callback shape catches a class of integration bugs early.
+The behaviour-shaped framework enforces several disciplines that would otherwise need to be enforced by code review or convention:
 
-### The aggregate lifecycle
+**Idempotency is the default.** Every command goes through the idempotency store; duplicates are detected by command ID. A slice does not need to remember to dedup; the framework does.
 
-Initialised → loaded from history → command received → validated → events appended → idle → passivated → re-loaded. Configurable TTL. Memory-pressure-aware passivation.
+**Replay is preserved.** Aggregate `apply/2` is pure by interface contract; the framework does not call it with anything that would introduce non-determinism. Projections are checkpointed against event_ids, not positions, so a projection rebuild from history produces consistent state.
 
-### The projection contract
+**Cross-cutting concerns are uniform.** Telemetry, retry, dead-lettering, idempotency, passivation — each has one implementation in the framework, applied uniformly to every slice. A team that wants different behaviour overrides the relevant behaviour; the default applies everywhere else.
 
-Subscribes via the subscription adapter. Receives events in order. Updates a read model. Persists checkpoints so it can resume after a restart. Idempotent against redelivery.
+**Backend portability is real.** Switching from reckon-db to another event store is a configuration change. Test suites use in-memory adapters with no production-config-shaped surprises.
 
-### The Decision runtime
+These disciplines are why the framework exists. The behaviours are the mechanism that makes the disciplines structural rather than aspirational.
 
-`evoq_decision_runtime:dispatch/3` runs the read-decide-write loop with bounded retry and exponential backoff. Cross-reference Chapter 5.
+## What this enables
 
-## Source material
+evoq turns reckon-db into a platform. The combination is what a Division's CMD and QRY/PRJ Departments actually run on. Slices declare which behaviour they implement; the framework supplies the cross-cutting machinery; the storage substrate handles persistence and replication. The Pizza Architecture, the Dossier and Decision primitives, the projection contract, the integration story — all of it lands in working code through the behaviours of this chapter.
 
-evoq README, guides (`aggregates.md`, `projections.md`, `event_handlers.md`, `process_managers.md`, `decisions.md`, `state_modules.md`, `adapters.md`).
+The remaining piece of the substrate is the polyglot frontier: how clients that are *not* on the BEAM reach this stack. That is the work of *reckon-gateway* (the gRPC ingress) and *reckon-proto* (the canonical wire contract). @sec-gateway is next.
