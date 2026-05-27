@@ -4,17 +4,13 @@ This book is opinionated. It is also short.
 
 It is opinionated because event sourcing has accumulated decades of folklore, some of it load-bearing, much of it cargo-culted from a few high-profile projects. The folklore deserves to be sorted. This Codex sorts it: what is essential, what is incidental, what is wrong but persistent.
 
-It is short because the substance of event sourcing fits in a single book. The patterns are not numerous; they are interlocking. When you understand the Dossier, you understand why aggregates have edges. When you understand the Pizza, you understand why horizontal layers fail. When you understand the Cycle, you understand why architecture is not a phase. Once these click, the rest follows.
+It is short because the substance of event sourcing fits in a single book. The patterns are not numerous; they are interlocking. When you understand the Dossier, you understand why aggregates have edges. When you understand the Pizza, you understand why horizontal layers fail. The Cycle then explains why architecture is itself a process, not a phase. Once these click, the rest follows.
 
 The book grew out of a working software stack (*reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*) and the years of practice that shaped it. The stack ships under permissive licences. The patterns are older than the stack and will outlive it. Both are documented here.
 
-Three audiences. Practitioners adopting the stack will read for the *how*. Decision-makers evaluating it will read for the *why*. People who have read every Greg Young blog post and every Vaughn Vernon book will read for the *what now*; the parts where this Codex departs from the orthodoxy. Each chapter serves all three; the depth opens as you go.
+The audience is mixed. Practitioners adopting the stack will read for the *how*; decision-makers evaluating it will read for the *why*; readers already familiar with Greg Young's CQRS work or Vaughn Vernon's DDD writing will read for the *what now*, the parts where this Codex departs from the orthodoxy. Each chapter opens its depth as you go.
 
-What the book is not:
-
-- It is not a tutorial. There are working examples, but the book does not march you through "your first event store, hello-world style". If you want a tutorial, the stack's READMEs cover that.
-- It is not a survey. Other patterns (CRDTs, projections-as-databases, sourcing over append-only logs in Kafka-shaped systems) are mentioned only where they sharpen our positions.
-- It is not neutral. Where there is a defensible position, the book takes one. Where there are real tradeoffs, the book names them. Where the literature is wrong, the book says so.
+What the book is not. The book is not a tutorial; the stack's READMEs cover step-by-step setup when you need it. Neither is it a survey of the event-sourcing literature; other patterns (CRDTs, projections-as-databases, sourcing over append-only logs in Kafka-shaped systems) come up only where the comparison sharpens the Codex's own position. The book is opinionated, and the prose is where the opinions live: where there is a defensible position, the book takes one; where there are real tradeoffs, it names them.
 
 A note on tone. The book has voice but no theatre. It will not personify the architecture or mythologise the practice. It will tell you what works, what does not, and why. If you want philosophy for its own sake, this is not your book. If you want patterns for your codebase, read on.
 

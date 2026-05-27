@@ -166,13 +166,13 @@ has_open_reservation(Events) ->
         end, Events).
 ```
 
-Three things to notice about this slice.
+A few details deserve attention.
 
-First, `context/1` *declares* the filter that defines the consistency boundary. The runtime reads events matching this filter, observes their highest seq, and that seq becomes the cutoff for the eventual write. The filter is *part of the Decision's contract*, just as the stream-id is part of a Dossier's contract.
+`context/1` *declares* the filter that defines the consistency boundary. The runtime reads events matching this filter, observes their highest seq, and that seq becomes the cutoff for the eventual write. The filter is *part of the Decision's contract*, just as the stream-id is part of a Dossier's contract.
 
-Second, `decide/2` is a *pure function* over `(context_events, command)`. No I/O, no random, no clock. The runtime re-runs `decide/2` on every conflict, with refreshed context. If the function is not pure, retries produce different results and the system loses determinism. Side effects (logging, telemetry) belong outside the decision, in middleware.
+`decide/2` is a *pure function* over `(context_events, command)`. No I/O, no random, no clock. The runtime re-runs `decide/2` on every conflict, with refreshed context. If the function is not pure, retries produce different results and the system loses determinism. Side effects (logging, telemetry) belong outside the decision, in middleware.
 
-Third, the event carries the same tags the filter checks against. When this event commits, future Decisions with the same filter will *see* this event in their context. The event participates in its own consistency boundary. This is what makes the pattern work end-to-end.
+The event carries the same tags the filter checks against. When this event commits, future Decisions with the same filter will *see* this event in their context. The event participates in its own consistency boundary, which is what makes the pattern work end-to-end.
 
 If two Borrowers race to reserve the same ISBN:
 
@@ -241,13 +241,11 @@ end
 return {error, retry_budget_exhausted}
 ```
 
-Three things to note.
-
 **Pure decide.** `decide/2` is re-run on every retry. It must be pure. The runtime guarantees the *context* is refreshed; the runtime does not guarantee the *clock* is the same, or that random numbers are the same. If the decision must use a clock, capture the clock value as part of the command before dispatch and pass it through; don't read the clock in `decide/2`.
 
 **Exponential backoff with jitter.** The backoff prevents thundering herds. Without it, a hot Decision under conflict would burn budgets in lockstep. With it, the natural variance separates retries enough for one to win.
 
-**Bounded budget.** The runtime does not loop forever. After `retry_budget()` attempts, it surfaces `{error, retry_budget_exhausted}`. The caller decides what to do; escalate, return an error to the user, queue for off-peak retry. Heavy contention on a Decision is a signal; surfacing it lets the caller respond rather than masking the contention with infinite retries.
+**Bounded budget.** The runtime does not loop forever. After `retry_budget()` attempts, it surfaces `{error, retry_budget_exhausted}`. The caller decides what to do: escalate, return an error to the user, or queue for off-peak retry. Heavy contention on a Decision is a signal; surfacing it lets the caller respond rather than masking the contention with infinite retries.
 
 The Dossier's retry story is similar but usually simpler: most aggregate frameworks (evoq among them) handle one or two retries on version conflicts internally and surface the error after that. Dossier conflicts are rarer because the boundary is narrower (one stream, one identity).
 

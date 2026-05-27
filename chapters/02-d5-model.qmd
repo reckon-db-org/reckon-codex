@@ -77,9 +77,9 @@ A Dossier is not a database row. A Dossier *is* its history. Rebuilding state me
 
 Validation in this world becomes: *can this slip be added to this Dossier?*; where a slip is one new event we are proposing to append. *Can a loan_renewed_v1 be added to this Loan? Only if the Loan is currently opened, not returned, not archived.* The Dossier's history tells us, deterministically, what its current state is, and therefore which slips can or cannot be added.
 
-The word *Dossier* is chosen carefully. It evokes a paper folder that accumulates documents over time. It is not a record. It is not a row. It is not an object with a state field. It is a folder of paper, and you read it front to back to know what happened.
+The word *Dossier* is chosen carefully. It evokes a paper folder that accumulates documents over time. A Dossier is not a database record or a state field; it is a folder of paper, and you read it front to back to know what happened.
 
-Some Dossiers are short-lived (a Loan exists for a few weeks). Some are long-lived (a Membership exists for years). Some never close (a Catalogue Entry might be revised but never archived). All of them are *one Dossier per instance*: one Loan, one Membership, one Catalogue Entry. The stream IDs are the instance identities.
+Some Dossiers live briefly (a Loan exists for a few weeks); others span years (a Membership); some never close (a Catalogue Entry might be revised but never archived). Whatever the lifetime, the rule is *one Dossier per instance*: one Loan, one Membership, one Catalogue Entry. The stream IDs are the instance identities.
 
 ## Why this and not the classical layers
 

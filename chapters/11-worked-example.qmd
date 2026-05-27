@@ -109,11 +109,11 @@ decide(#book_state{status = retired}, #register_book_v1{}) ->
     {error, book_was_retired}.
 ```
 
-Three things to notice. First, the Dossier is the *Book* (one stream per book; the stream id is `book-{isbn}-{copy_number}`). The Dossier's state machine accepts a register only from the `none` (empty) state; the stream-version concurrency check at append time guarantees this remains true under concurrent retries.
+Notice that the Dossier is the *Book* (one stream per book; the stream id is `book-{isbn}-{copy_number}`). The Dossier's state machine accepts a register only from the `none` (empty) state; the stream-version concurrency check at append time guarantees this remains true under concurrent retries.
 
-Second, the handler returns `{error, _}` for state-violations *and* for invalid input (a bad ISBN). The Codex's discipline (@sec-screaming) keeps validation local to the slice; the aggregate does not delegate validation to "validators" elsewhere.
+The handler returns `{error, _}` for state-violations *and* for invalid input (a bad ISBN). The Codex's discipline (@sec-screaming) keeps validation local to the slice; the aggregate does not delegate validation to "validators" elsewhere.
 
-Third, the slice is *short*. Four files, ~80 lines of Erlang for the entire capability. Adding a new field (say, a `genre`) touches at most three of these files (command, event, handler) and the projection on the QRY side. No fan-out, no architecture meeting, no migration plan.
+Finally, the slice is *short*: four files, ~80 lines of Erlang for the entire capability. Adding a new field (say, a `genre`) touches at most three of these files (command, event, handler) and the projection on the QRY side. No fan-out, no architecture meeting, no migration plan.
 
 ### The Catalogue aggregate
 

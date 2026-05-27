@@ -204,7 +204,7 @@ handle_fact(#book_registered_v1{
     end.
 ```
 
-Three things to notice.
+A few details worth pulling out.
 
 **The PM is itself a slice.** Folder name (`on_book_registered_track_loanable`) screams what it does. The naming convention is `on_{source_event}_{verb}_{target}`; a developer browsing Lending's CMD app sees the folder, reads the name, and knows: *this is where Lending reacts to Catalogue's book_registered facts*. Discoverability is at the filesystem level. No "integrations" subdirectory, no central event-routing table, no decoder ring. The integration is where the integration's name says it is.
 
