@@ -10,6 +10,8 @@ The Codex's prose is released under **Creative Commons Attribution-ShareAlike 4.
 
 The aggregateless-event-sourcing position presented in Chapter 5 owes its sharpness to Rico Fritzsche's writing and Sara Pellegrini's [dcb.events](https://dcb.events) reference work. The Codex disagrees with their defaults; it does not disagree with their thinking. Greg Young's two decades of CQRS+ES pedagogy taught a generation; Vaughn Vernon's *Implementing Domain-Driven Design* made tactical DDD legible to working developers. The inverted-architecture family was named by Jeffrey Palermo (Onion), articulated by Alistair Cockburn (Hexagonal), and synthesised by Robert C. Martin (Clean Architecture). The Pizza framing in Chapter 3 is what happens when their inversion meets vertical slicing; the slicing tradition itself goes back to Cockburn's use cases and forward through Greg Young's *vertical slice architecture* talks.
 
+The specific name **Pizza Architecture** comes from earlier work at DisComCo (The Distributed Computing Company, [discomco.pl](https://discomco.pl)), whose *Cakes, Onions and Pizzas* presentation first laid out the three-way comparison — Layered (cake), Inverted (onion), Sliced (pizza) — and gave the Pizza its hub-and-spokes diagram with four actor types per spoke. The Codex's Figure 3.1 and the company-model view in Figure 3.2 are descendants of that work; the underlying intellectual lineage is older than this book and deserves naming.
+
 The library worked example in Chapter 11 is generic by design. Any resemblance to a real-world lending system is welcome; borrow the patterns, borrow the schema, borrow the integration facts.
 
 ## On the binding

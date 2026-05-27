@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 720" font-family="system-ui, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" font-family="system-ui, sans-serif">
   <defs>
     <radialGradient id="hub" cx="50%" cy="50%" r="55%">
       <stop offset="0%"   stop-color="#7c3aed"/>
       <stop offset="100%" stop-color="#4c1d95"/>
+    </radialGradient>
+    <radialGradient id="pubsub" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" stop-color="#3b82f6" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.35"/>
     </radialGradient>
     <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="2" result="b"/>
@@ -12,73 +16,143 @@
   </defs>
 
   <!-- Background -->
-  <rect width="900" height="720" fill="#fefcf8"/>
+  <rect width="1000" height="720" fill="#fefcf8"/>
 
   <!-- Title -->
-  <text x="450" y="46" text-anchor="middle" font-size="24" font-weight="700" fill="#1e1b4b">Pizza Architecture</text>
-  <text x="450" y="70" text-anchor="middle" font-size="13" fill="#64748b" font-style="italic">Inverted, sliced: three Department rings around an Event Store, cut by Desks</text>
+  <text x="500" y="42" text-anchor="middle" font-size="22" font-weight="700" fill="#1e1b4b">Pizza Architecture: a Division in cross-section</text>
+  <text x="500" y="64" text-anchor="middle" font-size="12" fill="#64748b" font-style="italic">Hub (Event Store) + spokes (Desks with their actors) + Pub/Sub outer ring + external infrastructure</text>
 
-  <!-- Outer crust: infrastructure boundary -->
-  <circle cx="450" cy="400" r="285" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="5,4"/>
-
-  <!-- QRY ring (outer Department) -->
-  <circle cx="450" cy="400" r="245" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
-
-  <!-- PRJ ring (middle Department) -->
-  <circle cx="450" cy="400" r="195" fill="#d1fae5" stroke="#059669" stroke-width="1.5"/>
-
-  <!-- CMD ring (inner Department) -->
-  <circle cx="450" cy="400" r="140" fill="#fce7f3" stroke="#be185d" stroke-width="1.5"/>
-
-  <!-- Wedge dividers: 8 radial dashed lines through every ring -->
-  <g stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="3,3" stroke-opacity="0.55">
-    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(22.5 450 400)"/>
-    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(67.5 450 400)"/>
-    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(112.5 450 400)"/>
-    <line x1="450" y1="115" x2="450" y2="685" transform="rotate(157.5 450 400)"/>
+  <!-- ====== external infrastructure boxes ====== -->
+  <g font-size="10.5" fill="#475569" text-anchor="middle">
+    <!-- storage -->
+    <rect x="40" y="220" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="80" y="244">storage</text>
+    <!-- telemetry -->
+    <rect x="40" y="370" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="80" y="394">telemetry</text>
+    <!-- hardware -->
+    <rect x="40" y="510" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="80" y="534">hardware</text>
+    <!-- caching -->
+    <rect x="450" y="600" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="490" y="624">caching</text>
+    <!-- messaging -->
+    <rect x="880" y="220" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="920" y="244">messaging</text>
+    <!-- internet -->
+    <rect x="880" y="370" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="920" y="394">internet</text>
+    <!-- event stream -->
+    <rect x="880" y="510" width="80" height="40" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+    <text x="920" y="534">event stream</text>
   </g>
 
-  <!-- Ring labels (placed at top of each ring on the centre vertical) -->
-  <text x="450" y="135" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e" letter-spacing="2.5">CRUST · INFRASTRUCTURE</text>
-  <text x="450" y="172" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a" letter-spacing="4">QRY</text>
-  <text x="450" y="222" text-anchor="middle" font-size="13" font-weight="700" fill="#065f46" letter-spacing="4">PRJ</text>
-  <text x="450" y="277" text-anchor="middle" font-size="13" font-weight="700" fill="#831843" letter-spacing="4">CMD</text>
+  <!-- ====== outer ring: Pub/Sub Infrastructure ====== -->
+  <circle cx="500" cy="380" r="290" fill="url(#pubsub)" stroke="#3b82f6" stroke-width="3"/>
+  <text x="500" y="105" text-anchor="middle" font-size="11" font-weight="700" fill="#1e3a8a" letter-spacing="2.5">PUB / SUB INFRASTRUCTURE</text>
 
-  <!-- Hub: event store -->
-  <circle cx="450" cy="400" r="80" fill="url(#hub)" stroke="#312e81" stroke-width="2" filter="url(#soft)"/>
-  <text x="450" y="394" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">EVENT</text>
-  <text x="450" y="414" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">STORE</text>
+  <!-- ====== 8 spokes ====== -->
+  <!-- Each spoke = one slice (Desk). Four colour-coded actor types per spoke. -->
+  <!-- Layout: 8 wedges around the hub at 45° each. Each wedge holds 4 actor blocks (Emitter, Listener, Responder, Requester). -->
 
-  <!-- Desk labels around the wedges (positioned in QRY ring, radius ~265) -->
-  <g font-size="11.5" fill="#0f172a" text-anchor="middle" font-family="monospace">
-    <!-- Wedge centres at every 45° around the wheel. Wedge 1 = north -->
-    <text x="611" y="240">return_loan</text>
-    <text x="681" y="404">renew_loan</text>
-    <text x="611" y="566">flag_overdue</text>
-    <text x="450" y="635">reserve_isbn</text>
-    <text x="289" y="566">open_membership</text>
-    <text x="219" y="404">register_book</text>
-    <text x="289" y="240">retire_book</text>
-    <text x="450" y="338" fill="#1e1b4b" font-weight="700">issue_loan</text>
+  <!-- Spoke geometry: at each angle, draw a stack of 4 small rects from r=100 to r=240. -->
+  <!-- Using <g transform="rotate(angle 500 380)"> for each spoke. -->
+
+  <g>
+    <!-- Spoke 1: north (0°), issue_loan -->
+    <g transform="rotate(0 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="500" y="124" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">issue_loan</text>
+
+    <!-- Spoke 2: NE (45°), return_loan -->
+    <g transform="rotate(45 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="681" y="200" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">return_loan</text>
+
+    <!-- Spoke 3: E (90°), renew_loan -->
+    <g transform="rotate(90 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="758" y="383" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">renew_loan</text>
+
+    <!-- Spoke 4: SE (135°), flag_overdue -->
+    <g transform="rotate(135 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="681" y="565" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">flag_overdue</text>
+
+    <!-- Spoke 5: S (180°), reserve_isbn -->
+    <g transform="rotate(180 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="500" y="650" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">reserve_isbn</text>
+
+    <!-- Spoke 6: SW (225°), open_membership -->
+    <g transform="rotate(225 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="319" y="565" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">open_membership</text>
+
+    <!-- Spoke 7: W (270°), register_book -->
+    <g transform="rotate(270 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="242" y="383" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">register_book</text>
+
+    <!-- Spoke 8: NW (315°), retire_book -->
+    <g transform="rotate(315 500 380)">
+      <rect x="478" y="138" width="44" height="22" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="162" width="44" height="22" fill="#86efac" stroke="#166534" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="186" width="44" height="22" fill="#fde68a" stroke="#92400e" stroke-width="0.8" rx="2"/>
+      <rect x="478" y="210" width="44" height="22" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8" rx="2"/>
+    </g>
+    <text x="319" y="200" text-anchor="middle" font-size="11" font-family="monospace" font-weight="700" fill="#0f172a">retire_book</text>
   </g>
 
-  <!-- Side legend -->
-  <g transform="translate(720, 145)">
-    <rect x="-5" y="-15" width="175" height="245" fill="#fafaf9" stroke="#e2e8f0" stroke-width="1" rx="4"/>
-    <text x="0" y="0" font-size="12" font-weight="700" fill="#1e1b4b">Key Principles</text>
-    <text x="0" y="22" font-size="11" fill="#334155">• Hub: Event Store</text>
-    <text x="0" y="40" font-size="11" fill="#334155">• Rings: CMD / PRJ / QRY</text>
-    <text x="0" y="58" font-size="11" fill="#334155">• Wedges: Desks (slices)</text>
-    <text x="0" y="76" font-size="11" fill="#334155">• Crust: infrastructure</text>
-    <text x="0" y="94" font-size="11" fill="#334155">• Inversion: deps inward</text>
-    <text x="0" y="112" font-size="11" fill="#334155">• Slicing: by capability</text>
-    <text x="0" y="138" font-size="12" font-weight="700" fill="#1e1b4b">Flow direction</text>
-    <text x="0" y="160" font-size="11" fill="#334155">CMD writes → store</text>
-    <text x="0" y="178" font-size="11" fill="#334155">PRJ reads ← store</text>
-    <text x="0" y="196" font-size="11" fill="#334155">QRY serves ← PRJ</text>
-    <text x="0" y="220" font-size="10.5" fill="#475569" font-style="italic">Each slice spans all three.</text>
+  <!-- ====== Hub: Event Store ====== -->
+  <circle cx="500" cy="380" r="75" fill="url(#hub)" stroke="#312e81" stroke-width="2" filter="url(#soft)"/>
+  <text x="500" y="374" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">EVENT</text>
+  <text x="500" y="394" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">STORE</text>
+  <text x="500" y="412" text-anchor="middle" font-size="9" fill="#ddd6fe" font-style="italic">(hub)</text>
+
+  <!-- ====== Actor legend ====== -->
+  <g transform="translate(810, 580)">
+    <rect x="-5" y="-15" width="170" height="120" fill="#fafaf9" stroke="#e2e8f0" stroke-width="1" rx="4"/>
+    <text x="0" y="0" font-size="11" font-weight="700" fill="#1e1b4b">Per-spoke actors</text>
+    <rect x="0" y="10" width="14" height="14" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.8"/>
+    <text x="20" y="22" font-size="10" fill="#334155">Emitter (publishes)</text>
+    <rect x="0" y="28" width="14" height="14" fill="#86efac" stroke="#166534" stroke-width="0.8"/>
+    <text x="20" y="40" font-size="10" fill="#334155">Listener (subscribes)</text>
+    <rect x="0" y="46" width="14" height="14" fill="#fde68a" stroke="#92400e" stroke-width="0.8"/>
+    <text x="20" y="58" font-size="10" fill="#334155">Responder (RPC in)</text>
+    <rect x="0" y="64" width="14" height="14" fill="#fca5a5" stroke="#991b1b" stroke-width="0.8"/>
+    <text x="20" y="76" font-size="10" fill="#334155">Requester (RPC out)</text>
+    <text x="0" y="96" font-size="10" fill="#475569" font-style="italic">A spoke is a slice.</text>
   </g>
 
-  <!-- Footer signature -->
-  <text x="870" y="710" text-anchor="end" font-size="9" fill="#94a3b8">The Reckon Codex · Pizza Architecture</text>
+  <!-- ====== Footer ====== -->
+  <text x="990" y="710" text-anchor="end" font-size="9" fill="#94a3b8">The Reckon Codex · Pizza Architecture · after the DisComCo deck</text>
 </svg>
