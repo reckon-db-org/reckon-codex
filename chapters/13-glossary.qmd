@@ -1,52 +1,209 @@
 # Glossary {#sec-glossary .unnumbered}
 
-::: {.callout-note}
-## Chapter status
-Stub. Final glossary will follow once Chapters 1–12 are complete.
-:::
+Definitions for the load-bearing vocabulary of this book. Terms in italics within definitions cross-reference other entries here.
 
-Definitions for the load-bearing vocabulary in this book.
+---
 
-----
+**Aggregate**
+:   The classical DDD term for a unit of identity, lifetime, and concurrency. In this book, the equivalent first-class concept is the *Dossier*. The term *aggregate* still appears in code (the Erlang `evoq_aggregate` behaviour) because that is the framework's name; conceptually, every aggregate in the codebase is a Dossier.
 
-**Department**
-:   One of the three sub-units of a Division: CMD (command-side, writes events), PRJ (projection-side, builds read models), QRY (query-side, serves reads). The three are sibling deployables, not stacked layers.
+**Append-only log**
+:   The storage primitive at the heart of event sourcing. Events are appended, never updated or deleted. State at any time is a *fold* over the log. See @sec-why.
 
-**Desk**
-:   A single capability inside a Department. One verb, one subject (e.g., *issue_loan*). Lives in one folder; the folder name screams the capability. Vertical slicing happens at the Desk boundary.
+**Birth event**
+:   The first event in a *Dossier*'s stream. Carries one-time metadata (creator, initial brief, origin). Subsequent events refine state without re-declaring origin. Missing or absent birth events are catalogued as an antipattern in @sec-antipatterns.
+
+**Catalogue mode**
+:   One of three *reckon-gateway* operational modes. The gateway holds no data; every request routes to the backing cluster owning the target *store*. See @sec-gateway.
+
+**CMD**
+:   The command-side *Department* of a *Division*. Accepts commands, validates them against rebuilt *Dossier* state, emits events. One of three Departments along with *PRJ* and *QRY*. See @sec-pizza.
+
+**Command**
+:   An intent to change state, presented to *CMD*. Validated by an aggregate's `execute/2` (in *evoq* terms) and either accepted (with events emitted) or rejected (with an error). Names are present tense, verb-subject: `register_user_v1`, `issue_loan_v1`. See @sec-screaming.
+
+**Command pipeline**
+:   A chain of pre-aggregate steps that load cross-entity facts and enrich the command before the *Dossier* sees it. Preserves replay determinism by keeping reads outside event flow. Pipeline steps are named, ordered, and live in the slice that uses them. See @sec-pipelines.
+
+**Conflict**
+:   In a *Decision*, the outcome when a tag-filter context query reveals an event with seq above the caller's cutoff. The new events are not written. In the gRPC layer, *Conflict* is a structured response variant (`oneof { Committed | Conflict }`), not a gRPC error. See @sec-gateway.
+
+**Committed**
+:   In a *Decision*, the outcome when the conditional append succeeds. Carries the new last-seq. The sibling variant of *Conflict*. See @sec-gateway.
+
+**CQRS**
+:   *Command Query Responsibility Segregation*. The pattern of splitting the write side (commands, events) from the read side (queries, read-models). Greg Young's 2010 articulation [@young2010cqrs]. The Codex treats CQRS and event sourcing as one architectural commitment. See @sec-why.
+
+**Crust**
+:   The outer ring of the *Pizza* — infrastructure adapters, NIFs, wire-protocol bindings. Technical concerns belong here, named for their mechanism. The discipline forbids technical names from leaking into slice folders. See @sec-screaming.
+
+**DCB**
+:   *Dynamic Consistency Boundary*. The primitive that backs *Decisions*: tag-filter conditional append, where the consistency unit is a query over many streams rather than one stream's version. Underlying mechanism in *reckon-db*: `append_if_no_tag_matches/4`. See @sec-dossiers, @sec-reckon-db.
 
 **Decision**
-:   The write-side sibling to a Dossier. A Decision writes events conditional on a tag-filter context query rather than on a stream version. No identity, no lifetime, no folder — implemented as the `evoq_decision` behaviour. Used for cross-cutting checks (uniqueness, allocation, idempotency, rate limits).
+:   The cross-cutting consistency primitive. Writes events conditional on no event matching a tag-filter having seq above a cutoff. The escape hatch for invariants that resist any *Dossier* shape — uniqueness, allocation, rate limits. Implemented as the `evoq_decision` behaviour. See @sec-dossiers.
+
+**Department**
+:   One of three sub-units of a *Division*: *CMD*, *PRJ*, *QRY*. Sibling deployables, not stacked layers. PRJ is typically fused into QRY for engineering convenience but is logically distinct. See @sec-pizza.
+
+**Desk**
+:   A single capability inside a Department. One verb, one subject (e.g. *issue_loan*). Lives in one folder; the folder name *screams* the capability. The slicing happens at the Desk boundary. See @sec-pizza, @sec-screaming.
 
 **Division**
-:   A cohesive piece of software with its own release cycle and bounded vocabulary. A bounded context, in the Evans sense. Distinct from a Domain — see *Domain*.
+:   A cohesive piece of software with its own release cycle and bounded vocabulary — a *bounded context* in the Evans sense [@evans2003ddd]. Distinct from *Domain*. Has one *event store*, three *Departments*, many *Desks*. The unit of team ownership and autonomous release. See @sec-d5.
 
 **Domain**
-:   The whole problem space a software organisation serves. Larger than a Division. A Domain typically contains multiple Divisions. Note: DDD literature sometimes uses "domain" for what the Codex calls a Division; the Codex uses Domain only for the strategy-level container.
+:   The whole problem space a software organisation serves. Larger than a *Division*; a Domain typically contains multiple Divisions. The Codex's senior use of "domain"; DDD literature sometimes uses the word for what this book calls a Division. See @sec-d5.
 
 **Dossier**
-:   The artefact that flows through Desks, accumulating events. The Dossier *is* its history; rebuilding state means replaying the events. A Loan, a Membership, a Catalogue Entry — all Dossiers. Identity carrier; concurrency unit.
+:   The process artefact that flows through *Desks*, accumulating events. A *Loan*, a *Membership*, an *Order* — all Dossiers. Identity carrier; stream owner; concurrency unit. The 90%-case alternative to the *Decision*. See @sec-d5, @sec-dossiers.
+
+**Embedded mode**
+:   One of three *reckon-gateway* operational modes. The gateway runs a local *reckon-db* *store* and serves it directly over gRPC. See @sec-gateway.
+
+**Event**
+:   The immutable record of one fact about the world. Past-tense, versioned (`loan_issued_v1`). Carries identity, type, stream id, version, position, data, metadata, tags, integrity fields. The unit of writing in an event-sourced system. See @sec-reckon-db.
+
+**Event handler**
+:   An *evoq* behaviour for side effects triggered by events — notifications, integrations, alerts. Subscribes to events, performs an effect, acknowledges. Sibling concept to *projection*; differs in that the effect is *outside* the system (HTTP, SMTP), not a read-model. See @sec-evoq.
+
+**Event sourcing**
+:   The discipline of using an *append-only log* of *events* as the primary record of state. State is derived by folding. The book's central architectural commitment; @sec-why argues the case.
 
 **Event store**
-:   The append-only log holding events. The hub at the centre of every Division's Pizza diagram. Implemented by *reckon-db*.
+:   The persistent store of events. The centre of the *Pizza*; the hub from which read-models are derived. Implemented by *reckon-db*. See @sec-reckon-db.
+
+**evoq**
+:   The framework that turns *reckon-db* into a platform. Twenty-one behaviours formalising the roles in a *Division*: aggregate, projection, decision, event handler, process manager, and more. See @sec-evoq.
+
+**Federation**
+:   The *reckon-gateway* operational pattern in *catalogue mode*: one gateway endpoint federates many remote *reckon-db* clusters. See @sec-gateway.
+
+**FilterList**
+:   The Protocol Buffers message type holding a list of *TagFilter* values, used to represent the recursive compound shapes (`conjunction`, `disjunction`). See @sec-gateway.
+
+**Hexagonal Architecture**
+:   Alistair Cockburn's 2005 framing of the inverted-architecture family [@cockburn2005hexagonal]. Domain at the centre, *ports* (interfaces) on the boundary, *adapters* connecting outside. Same intent as *Onion Architecture*; different vocabulary. The *Pizza Architecture* extends both with vertical slicing. See @sec-pizza.
+
+**Hidden node**
+:   An Erlang dist mode (`-hidden` flag) where a node is invisible to peers' `nodes/0` and to OTP's `pg`. Critical for *reckon-gateway* in *catalogue mode* to prevent cross-cluster leakage through the gateway bridge. See @sec-gateway.
+
+**HMAC chain**
+:   The tamper-resistance mechanism on integrity-enabled *reckon-db* stores. Each event carries a `prev_event_hash` (public, SHA-256) and a `mac` (server-private, HMAC-SHA-256). The chain detects tampering; the HMAC defends against forgery. See @sec-reckon-db.
+
+**Hybrid mode**
+:   One of three *reckon-gateway* operational modes. Combines *embedded* (local store) and *catalogue* (federated remotes). See @sec-gateway.
+
+**Idempotency**
+:   The property that processing the same input twice produces the same effect as processing it once. Required of *projections* (because subscriptions deliver at least once) and of *commands* (because clients retry). *evoq* provides idempotency stores; the discipline is to use them. See @sec-evoq.
+
+**Integration fact**
+:   A versioned, named, stable shape published to the *mesh* for cross-*Division* consumption. Distinct from a *domain event*: domain events stay local to their Division; integration facts are explicit contracts. See @sec-pipelines.
+
+**Inverted architecture**
+:   The family of patterns that invert the dependency direction relative to classical layered architecture — *Onion*, *Hexagonal*, *Clean*. Dependencies point inward toward a domain core. *Pizza Architecture* extends the family with vertical slicing. See @sec-pizza.
+
+**Khepri**
+:   The Raft-replicated KV store underlying *reckon-db*, written by the RabbitMQ team. Provides the tree-shaped data model and transactional semantics on which reckon-db builds its event store. See @sec-reckon-db.
+
+**Mesh**
+:   The inter-*Division* integration transport. A content-addressed routing layer (the running stack uses *macula*) for durable cross-network *integration facts*. Distinct from *pg*, which is intra-Division. See @sec-pipelines.
+
+**Onion Architecture**
+:   Jeffrey Palermo's 2008 framing of the inverted-architecture family [@palermo2008onion]. Concentric rings; dependencies point inward; domain at the centre. The earliest of the three classical names in the family. See @sec-pizza.
+
+**Optimistic concurrency**
+:   The concurrency strategy where a writer asserts the version it expects to see and the store rejects the write if the version has moved. Cheap when conflicts are rare; the basis for stream-version concurrency in *Dossiers*. See @sec-dossiers.
 
 **Pizza Architecture**
-:   A Division's structural shape: the inverted-architecture family (Onion / Hexagonal / Clean) plus orthogonal vertical slicing. Rings are CMD / PRJ / QRY; slices are Desks; the centre is the event store. See Chapter 3.
+:   The Codex's structural shape for a *Division*: the *inverted architecture* family plus orthogonal *vertical slicing*. Rings are *CMD*, *PRJ*, *QRY* around the *event store*; *Desks* are wedges that cut all rings. See @sec-pizza.
+
+**pg**
+:   Erlang's process-group registry (`pg` module), used for *intra-Division* event delivery — cheap, in-VM, ephemeral. Distinct from the *mesh*, which is inter-Division. See @sec-pipelines.
+
+**PRJ**
+:   The projection-side *Department*. Subscribes to events, materialises read-models. Typically fused into the *QRY* application but logically distinct. See @sec-pizza.
 
 **Process Manager (PM)**
-:   A subscriber to events from one Division that dispatches commands to another. Lives in the target Division's CMD Department, as a sibling slice (not nested inside a Desk). Sometimes called a saga.
+:   The cross-*Division* coordinator. Subscribes to *integration facts* from a source Division, dispatches commands into a target Division. Lives in the target Division's CMD as a *sibling slice* with the naming convention `on_{source_event}_{verb}_{target}`. A *saga* in the Garcia-Molina sense, renamed for structural clarity. See @sec-pipelines.
 
 **Projection**
-:   A subscriber to events that materialises a read model. Lives in the PRJ Department, usually fused with QRY into a single read-side app.
+:   A subscriber to events that materialises a read-model. Lives in *PRJ* (typically fused into *QRY*). Implemented as the `evoq_projection` behaviour; receives events wrapped in an `evoq_envelope`; returns intent (`{insert, table, row}`) rather than performing database writes directly. See @sec-evoq.
+
+**QRY**
+:   The query-side *Department*. Serves reads from read-models built by *PRJ*. Holds the read handlers; usually also holds the projection code (PRJ fused into QRY). See @sec-pizza.
+
+**Ra**
+:   The Raft consensus library underlying *Khepri* and therefore *reckon-db*. An Erlang implementation of the Raft protocol [@ongaro2014raft] developed by the RabbitMQ team. See @sec-reckon-db.
 
 **Reckon Cycle**
-:   The ten-stage software lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline. See Chapter 7.
+:   The ten-stage software-development lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline — back-arrows are normal. Each stage is itself a *Dossier*; the architecture applies recursively to itself. See @sec-cycle.
+
+**reckon-db**
+:   The event store at the centre of every *Pizza*. Built on *Khepri* and *Ra*. Provides the two consistency primitives (*stream-version*, *DCB*), the subscription mechanism, snapshots, and the cluster shape. See @sec-reckon-db.
+
+**reckon-evoq**
+:   The adapter library connecting *evoq* to *reckon-db*. Implements the four *evoq* adapter behaviours (event store, snapshot, subscription, checkpoint store) against *reckon-db*'s primitives.
+
+**reckon-gateway**
+:   The gRPC ingress that exposes *reckon-db* to polyglot clients. Three operational modes: *catalogue*, *embedded*, *hybrid*. Translates Protocol Buffers requests into Erlang `rpc:call/4` invocations into backing clusters. See @sec-gateway.
+
+**reckon-go**
+:   The idiomatic Go SDK that wraps the *reckon-proto* contract. Includes the `dcb` package for polyglot *Decisions* with the `(committed, conflict, err)` return shape. See @sec-gateway.
+
+**reckon-proto**
+:   The canonical Protocol Buffers contract for *reckon-gateway*. Code-free; consumed at build time by every SDK. The single source of truth for the wire shape. See @sec-gateway.
+
+**Replay**
+:   Rebuilding state from the *append-only log* by reading the events in order and folding them. The property that makes event sourcing trustworthy — any view can be regenerated from the events. See @sec-why.
+
+**Saga**
+:   The Garcia-Molina pattern for long-running, multi-step coordination that may need compensation. The Codex uses the term *Process Manager* instead, which carries the same mechanics with a structural home (sibling slice in the target Division's *CMD*). See @sec-pipelines.
+
+**Screaming Architecture**
+:   Robert C. Martin's coinage [@martin2017clean] for the principle that a system's structure should announce what it does, not how it is implemented. The Codex extends the principle with the *Pizza* (which provides the structural slots where the screaming happens). See @sec-screaming.
+
+**Seq cutoff**
+:   In a *Decision*, the highest seq the caller has observed for events matching its tag filter. The conditional-append rejects the write if any matching event has a seq strictly above the cutoff. The sentinel `-1` means "I have observed nothing yet". See @sec-dossiers.
+
+**Slice / Vertical slice**
+:   A folder containing every artefact for one capability — command, event, handler, projection — together. The slicing dimension of *Pizza Architecture*. *Desk* is the architectural term; *slice* is the structural term; they refer to the same thing. See @sec-pizza.
 
 **Slip**
-:   A single event inside a Dossier. The metaphor — the Dossier is a paper folder; the slips are the documents inside.
+:   A single event inside a *Dossier*. The metaphor: the Dossier is a paper folder; the slips are the documents inside. The term emphasises the per-event-as-record framing.
 
-**Tag filter**
-:   A recursive predicate over an event's tag set, used by Decisions to define their consistency context. Four shapes: `any_of`, `all_of`, `and_`, `or_`. See Chapter 5.
+**Snapshot**
+:   A periodic save of an aggregate's folded state, keyed by stream version. An optimisation, not a primary record — discarding a snapshot and rebuilding from events produces the same result. See @sec-reckon-db.
+
+**Store**
+:   The unit of *reckon-db* deployment — typically one per *Division*, sometimes more. Each store is a distinct Ra group with its own leader, its own disk path, its own event log. See @sec-reckon-db.
+
+**Stream**
+:   The per-*Dossier* append point in *reckon-db*. The stream's version is the unit of stream-version optimistic concurrency. One Dossier, one stream; multiple Dossiers, multiple streams. See @sec-reckon-db.
+
+**Stream-version concurrency**
+:   The optimistic-concurrency primitive at the *Dossier* level. Writers assert the expected current version; the store rejects if the version has moved. See @sec-dossiers.
+
+**Subscription**
+:   A long-lived consumer of events. Persistent (the store persists the checkpoint); scoped (by stream id, event type, event pattern, tag, or payload predicate); at-least-once delivered. See @sec-reckon-db.
+
+**Tag**
+:   A binary string attached to an event for cross-stream querying. Tags participate in two indexes in *reckon-db*: the per-stream tag list (used by general tag reads) and the DCB tag index (used by *Decisions*). See @sec-reckon-db.
+
+**TagFilter**
+:   A recursive predicate over an event's tag set. Four shapes: `any_of` and `all_of` (leaf shapes over tag lists), `and_` and `or_` (compound shapes over sub-filters). The consistency context of a *Decision*. Encoded in proto as a recursive oneof. See @sec-dossiers, @sec-gateway.
+
+**TagList**
+:   The Protocol Buffers message type holding a flat list of tag strings — used by the `match_any` and `match_all` variants of *TagFilter*. See @sec-gateway.
+
+**Tamper-resistance**
+:   The property that unauthorised modification of stored events is detectable. Provided by the *HMAC chain*. See @sec-reckon-db.
 
 **Vertical slice**
-:   A folder containing every artefact for one capability — command, event, handler, projection — together. The slicing dimension of Pizza Architecture. See Chapter 3.
+:   See *Slice*.
+
+**Walking skeleton**
+:   Alistair Cockburn's term for an end-to-end thin slice deployed on day one of a project — every stage of the *Reckon Cycle* exercised at minimal scope. Adopted by the Codex as the discipline for starting any new Division. See @sec-cycle.
+
+**Wheel**
+:   The Codex's mental image for the *Reckon Cycle* — a cycle with back-arrows, turned as many times as the work demands. Contrasts with the pipeline mental image. See @sec-cycle.

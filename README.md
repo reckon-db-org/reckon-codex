@@ -27,7 +27,7 @@ Scaffolding stage. Chapter 2 (the D5 model) is the gold-standard reference for t
 | II | 10. reckon-gateway and reckon-proto | ✅ first cut |
 | II | 11. Worked example: a lending library | ✅ first cut |
 | III | 12. Antipatterns | ✅ first cut |
-| III | 13. Glossary | stub |
+| III | 13. Glossary | ✅ first cut |
 | Back | Colophon | ✅ drafted |
 
 ## Building locally
