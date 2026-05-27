@@ -20,7 +20,7 @@ Scaffolding stage. Chapter 2 (the D5 model) is the gold-standard reference for t
 | I | 3. Pizza Architecture | ✅ first cut |
 | I | 4. Names that scream | stub |
 | I | 5. Dossiers and Decisions | ✅ first cut |
-| I | 6. Pipelines and Process Managers | stub |
+| I | 6. Pipelines and Process Managers | ✅ first cut |
 | I | 7. The Reckon Cycle | stub |
 | II | 8. reckon-db | stub |
 | II | 9. evoq | stub |
