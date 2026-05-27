@@ -1,60 +1,517 @@
 # Worked Example: A Lending Library {#sec-library}
 
-::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
-:::
+Part I established the patterns. Part II walked the libraries that implement them. This chapter shows what it looks like when you put them all together.
 
-A Lending Library built across two Divisions, using every load-bearing pattern in the book.
+The example is a lending library. The choice is deliberate: a library is universally familiar, has natural process-shaped entities (Loans, Memberships), has natural cross-cutting invariants (ISBN reservations), spans more than one bounded context, and has a real lifecycle (a book is acquired, lent, returned, eventually retired). Every load-bearing pattern in the book gets exercised on this example.
 
-## The shape of the example
+The chapter walks four scenarios end-to-end:
 
-**Domain:** Library Services.
+1. *Registering a new book* — a Catalogue Dossier comes into being and an integration fact crosses to Lending.
+2. *Reserving an ISBN* — a Decision enforces a cross-cutting uniqueness invariant.
+3. *Issuing a loan with a Borrower-open-loan-count check* — a command pipeline pre-loads cross-entity facts so the Dossier stays pure.
+4. *Polyglot: a Go client* — the same patterns reached from outside the BEAM.
 
-**Divisions:**
+Each scenario shows real code and real folder structures. The chapter is not a tutorial — it does not march through setup steps. It is a demonstration: *this is what an event-sourced Division built on the reckon stack looks like.*
 
-- **Catalogue Division** — knows about Books, their ISBNs, their copies.
-- **Lending Division** — knows about Loans, Members, and the lifecycle of a borrowing event.
+## The Domain and its Divisions
 
-**Cross-Division integration:** when a Book is registered in Catalogue, a fact crosses to Lending so the Lending Division knows the Book is loanable.
+The Domain is *Library Services*. The Domain has Divisions; the Codex's discipline (@sec-d5) is one Division per bounded context. Library Services divides naturally into three:
 
-## What the chapter will walk
-
-### Catalogue Division
-
-- *register_book/* Desk — CMD, validates ISBN format, idempotency on (ISBN, copy_number).
-- *retire_book/* Desk — CMD.
-- *reserve_isbn/* Decision — uniqueness check across all reservations. Uses `evoq_decision`.
-- *query_books_by_isbn/* — QRY.
-- *book_registered_to_lending/* emitter — publishes an integration fact when a Book becomes loanable.
-
-### Lending Division
-
-- *open_membership/* Desk — CMD.
-- *issue_loan/* Desk — CMD, validates membership and loan limits.
-- *renew_loan/* Desk — CMD, validates the Loan's state.
-- *return_loan/* Desk — CMD.
-- *flag_overdue/* Desk — CMD, triggered by time.
-- *on_book_registered_track_loanable/* Process Manager — subscribes to Catalogue's integration facts, dispatches `track_loanable_book` to Lending's CMD.
-- *query_loans_by_member/*, *query_overdue_loans_page/* — QRY.
-
-### What this exercises
-
-| Pattern | Where |
+| Division | Bounded context |
 |---|---|
-| D5 model | The two-Division structure; the Desks per Division |
-| Pizza Architecture | The CMD/PRJ/QRY layout per Division; the slicing |
-| Names that scream | Every Desk folder name |
-| Dossier (stream-version concurrency) | A Loan as a Dossier; its lifecycle events |
-| Decision (tag-filter concurrency) | ISBN reservation uniqueness |
-| Command Pipelines | `issue_loan` pipeline pre-loads member loan-count |
-| Process Managers | `on_book_registered_track_loanable` |
-| Integration transports | Catalogue → Lending via mesh fact; intra-Division via pg |
-| Reckon Cycle | The example's own lifecycle (Inception through Monitoring) |
+| **Catalogue** | Books, ISBNs, editions, physical copies |
+| **Lending** | Loans, returns, renewals, overdue flagging |
+| **Memberships** | Borrowers, sign-ups, suspensions |
 
-### Polyglot integration
+Three Divisions, three deployable units, three teams (in a larger organisation). Each Division has its own reckon-db store, its own CMD/PRJ/QRY structure, its own release cycle. The chapter focuses on the first two; Memberships is touched in passing.
 
-The chapter closes with a Go client (using *reckon-go*) that issues a loan via gRPC, exercising the gateway end-to-end:
+The integration points between them:
 
-- `c.Lending().IssueLoan(ctx, ...)` for the regular write.
-- `c.Catalogue().Dcb().Append(ctx, dcb.MatchAny("isbn:..."), -1, ...)` for the ISBN-reservation Decision, showing the `(committed, conflict, err)` return shape from Chapter 10.
+- Catalogue publishes integration facts about books that are loanable. Lending consumes them so it knows which books *can* be lent.
+- Lending publishes integration facts about loan events. Memberships consumes them to update per-borrower loan counts.
+
+Integration is via the mesh (@sec-pipelines), with explicit fact contracts per integration. Catalogue does not flood the mesh with internal events; it publishes named, versioned facts that downstream Divisions depend on.
+
+## Scenario 1: Registering a new book
+
+A librarian acquires a new book. The Catalogue Division should record this; the Lending Division should know the book is now loanable.
+
+### Catalogue's CMD side
+
+The Catalogue Division has a `register_book` Desk in its CMD Department. The slice:
+
+```
+apps/cmd_catalogue/src/register_book/
+├── register_book_v1.erl
+├── book_registered_v1.erl
+├── maybe_register_book.erl
+└── register_book_sup.erl
+```
+
+The command:
+
+```erlang
+%% register_book_v1.erl
+-record(register_book_v1, {
+    isbn        :: binary(),         %% 13 digits, validated by handler
+    title       :: binary(),
+    author      :: binary(),
+    copy_number :: pos_integer(),    %% library may own multiple copies
+    acquired_at :: integer(),        %% epoch millis
+    acquired_by :: binary()          %% staff member id
+}).
+```
+
+The event:
+
+```erlang
+%% book_registered_v1.erl
+-record(book_registered_v1, {
+    book_id     :: binary(),         %% deterministic from isbn + copy_number
+    isbn        :: binary(),
+    title       :: binary(),
+    author      :: binary(),
+    copy_number :: pos_integer(),
+    acquired_at :: integer(),
+    acquired_by :: binary()
+}).
+```
+
+The handler — the decision logic for whether the command can be accepted:
+
+```erlang
+%% maybe_register_book.erl
+-module(maybe_register_book).
+-export([decide/2]).
+
+decide(#book_state{status = none}, #register_book_v1{
+    isbn = Isbn, title = Title, author = Author,
+    copy_number = Copy, acquired_at = At, acquired_by = By
+}) ->
+    case valid_isbn(Isbn) of
+        false ->
+            {error, invalid_isbn};
+        true ->
+            BookId = book_id(Isbn, Copy),
+            {ok, [#book_registered_v1{
+                book_id     = BookId,
+                isbn        = Isbn,
+                title       = Title,
+                author      = Author,
+                copy_number = Copy,
+                acquired_at = At,
+                acquired_by = By
+            }]}
+    end;
+decide(#book_state{status = registered}, #register_book_v1{}) ->
+    {error, book_already_registered};
+decide(#book_state{status = retired}, #register_book_v1{}) ->
+    {error, book_was_retired}.
+```
+
+Three things to notice. First, the Dossier is the *Book* (one stream per book; the stream id is `book-{isbn}-{copy_number}`). The Dossier's state machine accepts a register only from the `none` (empty) state — the stream-version concurrency check at append time guarantees this remains true under concurrent retries.
+
+Second, the handler returns `{error, _}` for state-violations *and* for invalid input (a bad ISBN). The Codex's discipline (@sec-screaming) keeps validation local to the slice; the aggregate does not delegate validation to "validators" elsewhere.
+
+Third, the slice is *short*. Four files, ~80 lines of Erlang for the entire capability. Adding a new field — say, a `genre` — touches at most three of these files (command, event, handler) and the projection on the QRY side. No fan-out, no architecture meeting, no migration plan.
+
+### The Catalogue aggregate
+
+The aggregate wires the slice's handler into the Dossier's command dispatch:
+
+```erlang
+%% book_aggregate.erl
+-module(book_aggregate).
+-behaviour(evoq_aggregate).
+
+-export([init/1, execute/2, apply/2]).
+
+init(BookId) ->
+    #book_state{book_id = BookId, status = none}.
+
+execute(State, #register_book_v1{} = Cmd) ->
+    maybe_register_book:decide(State, Cmd);
+execute(State, #retire_book_v1{} = Cmd) ->
+    maybe_retire_book:decide(State, Cmd);
+execute(State, #correct_metadata_v1{} = Cmd) ->
+    maybe_correct_metadata:decide(State, Cmd).
+
+apply(#book_registered_v1{} = E, State) ->
+    State#book_state{
+        status      = registered,
+        isbn        = E#book_registered_v1.isbn,
+        title       = E#book_registered_v1.title,
+        author      = E#book_registered_v1.author,
+        copy_number = E#book_registered_v1.copy_number
+    };
+apply(#book_retired_v1{}, State) ->
+    State#book_state{status = retired};
+apply(#metadata_corrected_v1{} = E, State) ->
+    State#book_state{
+        title  = E#metadata_corrected_v1.title,
+        author = E#metadata_corrected_v1.author
+    }.
+```
+
+The aggregate is also short. Each command type dispatches to its slice's handler; each event type updates state. The aggregate itself contains no business logic — the logic lives in the slices, which is where reviewers find it.
+
+### The integration fact
+
+When a book is registered, Catalogue publishes an integration fact for downstream consumers. The fact lives in a separate slice in Catalogue's PRJ Department:
+
+```
+apps/qry_catalogue/src/book_registered_to_mesh/
+├── book_registered_to_mesh.erl
+└── book_registered_to_mesh_sup.erl
+```
+
+The emitter subscribes to `book_registered_v1` events in Catalogue's event store, translates them into a *public* fact shape, and publishes to the mesh:
+
+```erlang
+%% book_registered_to_mesh.erl
+-module(book_registered_to_mesh).
+-behaviour(evoq_event_handler).
+
+-export([init/1, handle/2]).
+
+init(_Opts) ->
+    {ok, #{published => 0}}.
+
+handle(#evoq_envelope{event = #book_registered_v1{} = E}, State) ->
+    Fact = #{
+        kind         => <<"catalogue.book_loanable_v1">>,
+        book_id      => E#book_registered_v1.book_id,
+        isbn         => E#book_registered_v1.isbn,
+        title        => E#book_registered_v1.title,
+        author       => E#book_registered_v1.author,
+        loanable_at  => E#book_registered_v1.acquired_at
+    },
+    mesh:publish(<<"catalogue.book_loanable_v1">>, Fact),
+    {ok, State#{published => maps:get(published, State) + 1}}.
+```
+
+The fact's name (`catalogue.book_loanable_v1`) is *not* the same as the internal event's name (`book_registered_v1`). The naming difference is deliberate: the public fact says what *downstream consumers care about* (the book is now loanable); the internal event says what *Catalogue records about its own state* (the book was registered). The two are not synonymous — registering a book in Catalogue is one of several possible paths to loanable-ness; future scenarios (e.g., books transferred from another library) might also produce loanable facts without producing `book_registered_v1` internal events.
+
+This is the discipline of @sec-pipelines made concrete: *domain events stay local, integration facts cross*. Catalogue's freedom to refactor its internal event shapes is preserved.
+
+### Lending's process manager
+
+Lending's CMD Department contains a slice that consumes the integration fact and dispatches a local command:
+
+```
+apps/cmd_lending/src/on_book_loanable_track_book/
+├── on_book_loanable_track_book.erl
+└── on_book_loanable_track_book_sup.erl
+```
+
+The PM:
+
+```erlang
+%% on_book_loanable_track_book.erl
+-module(on_book_loanable_track_book).
+-behaviour(evoq_process_manager).
+
+-export([init/1, handle_fact/2]).
+
+init([]) ->
+    mesh:subscribe(<<"catalogue.book_loanable_v1">>, self()).
+
+handle_fact(#{book_id := BookId, isbn := Isbn, title := Title,
+              author := Author, loanable_at := At}, State) ->
+    Cmd = #track_loanable_book_v1{
+        book_id     = BookId,
+        isbn        = Isbn,
+        title       = Title,
+        author      = Author,
+        loanable_at = At
+    },
+    case cmd_lending:dispatch(Cmd) of
+        {ok, _Events}   -> {ok, State};
+        {error, Reason} -> {error, Reason, State}
+    end.
+```
+
+The folder name screams the integration point: *on book becoming loanable, track the book in Lending's records*. A reviewer opening Lending's CMD app sees this folder and knows immediately that Lending consumes Catalogue's loanable facts here.
+
+Inside Lending, the `track_loanable_book` command operates on a different Dossier shape (`LoanableBook`, separate from Catalogue's `Book`). Lending's view of the book is its own; Catalogue's authority over the canonical book record is preserved.
+
+End to end: a Catalogue command (`register_book_v1`) becomes an internal event, then a mesh fact, then a Lending command, then a Lending event. Each step is auditable. Each Division stays in its own lane. No cross-Division API calls; no synchronous coupling.
+
+## Scenario 2: Reserving an ISBN
+
+A Borrower wants to put a hold on a specific ISBN that the library does not currently have available. The invariant: *only one open reservation may exist per ISBN at any time*. This invariant spans all reservations system-wide; it does not belong to any one Borrower (multiple Borrowers may want it) or any one Book Dossier (no Book Dossier exists for the unavailable copy yet). It is genuinely cross-cutting.
+
+This is the Decision pattern of @sec-dossiers, and the slice is `reserve_isbn`:
+
+```
+apps/cmd_catalogue/src/reserve_isbn/
+├── reserve_isbn.erl
+├── isbn_reserved_v1.erl
+└── reserve_isbn_sup.erl
+```
+
+The Decision:
+
+```erlang
+%% reserve_isbn.erl
+-module(reserve_isbn).
+-behaviour(evoq_decision).
+
+-export([context/1, decide/2, retry_budget/0]).
+
+context(#{isbn := Isbn}) ->
+    {all_of, [
+        <<"isbn:", Isbn/binary>>,
+        <<"kind:reservation">>
+    ]}.
+
+decide(ContextEvents, #{isbn := Isbn, borrower_id := BorrowerId}) ->
+    case has_open_reservation(ContextEvents) of
+        true ->
+            {error, isbn_already_reserved};
+        false ->
+            {ok, [#{
+                event_type => <<"isbn_reserved_v1">>,
+                data       => #{
+                    isbn        => Isbn,
+                    borrower_id => BorrowerId,
+                    reserved_at => erlang:system_time(millisecond)
+                },
+                tags       => [
+                    <<"isbn:", Isbn/binary>>,
+                    <<"kind:reservation">>,
+                    <<"borrower:", BorrowerId/binary>>
+                ]
+            }]}
+    end.
+
+retry_budget() -> 5.
+
+has_open_reservation(Events) ->
+    lists:any(
+        fun(#{event_type := <<"isbn_reserved_v1">>}) -> true;
+           (_)                                       -> false
+        end, Events).
+```
+
+The Decision is dispatched via `evoq_decision_runtime:dispatch(reserve_isbn, catalogue, Cmd)`. The runtime:
+
+1. Calls `context/1` to get the filter — `{all_of, [<<"isbn:9780321125217">>, <<"kind:reservation">>]}`.
+2. Reads events matching that filter from the `_dcb` pseudo-stream. Observes the highest seq among them.
+3. Calls `decide/2` with the context events. If `decide/2` returns an error, the runtime surfaces it directly. If it returns `{ok, Events}`, the runtime issues `append_if_no_tag_matches` with the same filter and the observed cutoff.
+4. On success, returns `{ok, NewEvents}`. On `context_changed` (someone else just added a matching event), retries from step 1 with refreshed context, up to `retry_budget/0` times.
+
+If two Borrowers race to reserve the same ISBN, Ra linearises their writes. One commits; the other's transaction sees the new matching event with seq above its cutoff; its write aborts with `context_changed`; its retry reads the now-non-empty context; `decide/2` returns `isbn_already_reserved`; the second Borrower receives the domain error. The race is resolved by the storage layer at write time; the domain code stays simple.
+
+Note what is *not* in this slice. There is no aggregate. There is no Reservation Dossier with a stream of its own. There is no inventory-of-reservations registry to maintain. The Decision is *the* mechanism for this invariant; the events written by the Decision live in the `_dcb` pseudo-stream and participate in their own consistency boundary via the tag index.
+
+## Scenario 3: Issuing a loan with cross-entity validation
+
+A Borrower wants to borrow a book. The constraints:
+
+- The Borrower must be an active member.
+- The Borrower must not already have five open loans.
+- The Book must be loanable (registered, not retired).
+- The Book must not currently be on loan.
+
+The first three constraints reach outside the Loan Dossier — they are facts about *other* Dossiers (Membership, Book). The Loan Dossier cannot read read-models inside its `apply/2` (the cardinal sin of @sec-pipelines). The cure is a command pipeline.
+
+### The slice
+
+```
+apps/cmd_lending/src/issue_loan/
+├── issue_loan_v1.erl
+├── loan_issued_v1.erl
+├── maybe_issue_loan.erl
+├── issue_loan_pipeline.erl
+└── issue_loan_sup.erl
+```
+
+### The pipeline
+
+```erlang
+%% issue_loan_pipeline.erl
+-module(issue_loan_pipeline).
+-export([steps/0]).
+
+steps() ->
+    [
+        {assert_membership_active,    #{}},
+        {load_borrower_open_loans,    #{}},
+        {load_book_loanable_status,   #{}},
+        {assert_book_not_on_loan,     #{}}
+    ].
+```
+
+Four steps. Each loads or asserts one cross-entity fact. The pipeline's responsibility is to enrich the command with everything the aggregate needs to decide *purely*.
+
+A representative step:
+
+```erlang
+%% load_borrower_open_loans.erl
+-module(load_borrower_open_loans).
+-behaviour(evoq_pipeline_step).
+
+-export([run/2]).
+
+run(#{command := #issue_loan_v1{borrower_id = BorrowerId} = Cmd,
+      metadata := Meta} = Ctx, _Opts) ->
+    {ok, Count} = qry_lending:count_open_loans_for_borrower(BorrowerId),
+    Ctx#{
+        command  := Cmd,
+        metadata := Meta#{
+            borrower_open_loan_count    => Count,
+            borrower_open_loan_count_at => erlang:system_time(millisecond)
+        }
+    }.
+```
+
+The step reads a read-model. Reading a read-model outside event flow is *fine* — the prohibition is on reading inside the aggregate's `apply/2`, not on reading in pipeline steps that run before the aggregate sees the command. The pipeline runs in dedicated worker code at the slice boundary; its reads do not threaten replay.
+
+### The handler
+
+By the time the handler runs, the command's metadata carries all the cross-entity facts:
+
+```erlang
+%% maybe_issue_loan.erl
+-module(maybe_issue_loan).
+-export([decide/2]).
+
+decide(#loan_state{status = none}, Ctx) ->
+    #{command := #issue_loan_v1{} = Cmd,
+      metadata := #{
+          borrower_open_loan_count := OpenCount,
+          book_loanable_status     := LoanableStatus,
+          membership_status        := MembershipStatus
+      } = Meta} = Ctx,
+    case {OpenCount, LoanableStatus, MembershipStatus} of
+        {N, _, _} when N >= 5 ->
+            {error, borrower_at_limit};
+        {_, not_loanable, _} ->
+            {error, book_not_loanable};
+        {_, _, suspended} ->
+            {error, membership_suspended};
+        {_, loanable, active} ->
+            {ok, [#loan_issued_v1{
+                loan_id      = generate_loan_id(),
+                borrower_id  = Cmd#issue_loan_v1.borrower_id,
+                book_id      = Cmd#issue_loan_v1.book_id,
+                issued_at    = erlang:system_time(millisecond),
+                due_date     = Cmd#issue_loan_v1.due_date,
+                %% Cross-entity facts captured in the event
+                borrower_open_loan_count_at_issue = OpenCount,
+                book_loanable_status_at_issue     = LoanableStatus,
+                membership_status_at_issue        = MembershipStatus
+            }]}
+    end;
+decide(#loan_state{status = open}, _Ctx) ->
+    {error, loan_already_open};
+decide(#loan_state{status = returned}, _Ctx) ->
+    {error, loan_already_concluded}.
+```
+
+The handler is a pure function of `(state, context)`. The state comes from the Loan Dossier's history; the context contains everything else needed for the decision. The cross-entity facts are *captured in the resulting event* — `borrower_open_loan_count_at_issue`, `book_loanable_status_at_issue`, `membership_status_at_issue` — so a future replay sees not just the action but the facts that justified it.
+
+If the Borrower files a complaint six months later that they were over-the-limit when this loan was issued, an investigator can replay the Loan Dossier and *see what the system knew*. The decision is auditable not just for *what was decided* but *why it was decided that way*.
+
+## Scenario 4: Polyglot — a Go client
+
+A reservation kiosk runs a Go service. The kiosk needs to reserve ISBNs on behalf of walk-in patrons. The Go service uses the *reckon-go* SDK to reach the Catalogue Division's gateway:
+
+```go
+package kiosk
+
+import (
+    "context"
+    reckon "codeberg.org/reckon-db-org/reckon-go"
+    "codeberg.org/reckon-db-org/reckon-go/dcb"
+)
+
+func ReserveISBN(ctx context.Context, c *reckon.Client,
+                  isbn, borrowerID string) error {
+    d := c.Dcb("catalogue")
+
+    // Read context: existing reservations for this ISBN.
+    res, err := d.Read(ctx,
+        dcb.And(
+            dcb.MatchAny("isbn:"+isbn),
+            dcb.MatchAny("kind:reservation"),
+        ),
+        100,
+    )
+    if err != nil {
+        return err
+    }
+
+    // Check whether already reserved.
+    for _, e := range res.Events {
+        if e.EventType == "isbn_reserved_v1" {
+            return ErrIsbnAlreadyReserved
+        }
+    }
+
+    // Attempt the conditional append.
+    committed, conflict, err := d.Append(ctx,
+        dcb.And(
+            dcb.MatchAny("isbn:"+isbn),
+            dcb.MatchAny("kind:reservation"),
+        ),
+        res.MaxSeq,
+        []dcb.ProposedEvent{
+            {
+                EventType: "isbn_reserved_v1",
+                Data:      mustEncode(reservationData(isbn, borrowerID)),
+                Tags: []string{
+                    "isbn:" + isbn,
+                    "kind:reservation",
+                    "borrower:" + borrowerID,
+                },
+            },
+        },
+    )
+
+    switch {
+    case err != nil:
+        return err
+    case conflict != nil:
+        // Someone else reserved between our read and write.
+        // The kiosk could retry; for this scenario, surface to the user.
+        return ErrIsbnAlreadyReserved
+    case committed != nil:
+        return nil
+    }
+    return nil
+}
+```
+
+This is the Decision pattern from outside the BEAM. The Go client:
+
+- Constructs the same recursive `TagFilter` the Erlang Decision uses (`dcb.And(dcb.MatchAny(...), dcb.MatchAny(...))`).
+- Reads the context.
+- Attempts the conditional append.
+- Handles the three outcomes: error (network/backend), conflict (context stale), committed (success).
+
+The Go client orchestrates the read-decide-write loop manually — there is no server-side `evoq_decision_runtime` equivalent in the polyglot path. For the kiosk's use case (one user at a time, low contention) this is fine. For high-contention polyglot Decisions, the client implements its own retry loop with the same bounded-budget discipline.
+
+The gateway routes the requests to the Catalogue cluster, which runs the same `append_if_no_tag_matches/4` primitive that Erlang clients use. The events written are the same events. A subsequent Erlang client running `evoq_decision_runtime:dispatch(reserve_isbn, catalogue, Cmd)` would see the kiosk's reservation in its context and respond with `isbn_already_reserved`. The two worlds (BEAM and polyglot) share one event log and one set of consistency guarantees.
+
+## What this example exercises
+
+| Pattern | Where exercised |
+|---|---|
+| D5 model (@sec-d5) | Three-Division structure; Desks named for their work |
+| Pizza Architecture (@sec-pizza) | CMD/PRJ structure per Division; vertical slicing throughout |
+| Names that scream (@sec-screaming) | Every slice folder name; `book_registered_to_mesh` for the emitter |
+| Dossier (stream-version concurrency) (@sec-dossiers) | The Book aggregate; the Loan aggregate |
+| Decision (tag-filter concurrency) (@sec-dossiers) | The `reserve_isbn` slice |
+| Command pipelines (@sec-pipelines) | `issue_loan_pipeline` pre-loading cross-entity facts |
+| Process Managers (@sec-pipelines) | `on_book_loanable_track_book` consuming Catalogue facts |
+| Integration transports (@sec-pipelines) | Mesh facts between Divisions; pg inside |
+| The Reckon Cycle (@sec-cycle) | The example's own walking-skeleton then iterative build |
+| reckon-db primitives (@sec-reckon-db) | Stream appends; DCB conditional appends |
+| evoq behaviours (@sec-evoq) | Aggregate, decision, event handler, process manager, pipeline step |
+| Gateway + polyglot (@sec-gateway) | The Go kiosk client |
+
+Every load-bearing pattern in the book has a place in this example. If a pattern is missing from the listing, it is not load-bearing for the kinds of systems the book is about.
+
+The remainder of the codex is reference material. @sec-antipatterns catalogues the mistakes worth naming; @sec-glossary collects the vocabulary in one place. The patterns of Parts I and II are the substance; the reference chapters help the reader navigate it.
