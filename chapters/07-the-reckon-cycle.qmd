@@ -1,36 +1,157 @@
 # The Reckon Cycle {#sec-cycle}
 
-::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
+The architecture of Part I has so far described systems as they *run*. Commands arrive, events append, projections materialise, queries answer. The system lives in an eternal present.
+
+Real software has phases. It is inceived, designed, built, tested, deployed, watched, and rescued. The phases interact: a rescue at month six surfaces an architectural flaw and sends the work back to the design phase. The phases are themselves processes — long-lived, paused-and-resumed, with histories worth auditing. They have identity (the *plan for the Lending Division, Q3 2026*) and lifetime (initiate, open, shelve, resume, conclude, archive). They look, on inspection, like Dossiers.
+
+This is the recursion the chapter takes seriously. The architectural commitments of Part I (Dossiers, the Pizza, screaming names, command pipelines, process managers) apply not only to the *software being built* but also to the *building of the software*. The latter is itself event-sourced, structurally organised, and process-shaped. The Codex names this meta-system the **Reckon Cycle**.
+
+## Building is a process, not a pipeline
+
+The default mental image for software production is a pipeline. Requirements come in at one end, working software comes out the other, the stages in between are progress milestones the work passes through exactly once. Methodologies that share this image — waterfall in its honest form, the V-model, the simpler stage-gate processes — work for problems where the requirements really are stable and the path really is unidirectional. For most software, they do not work.
+
+The reason is feedback. Information flows backwards along the pipeline as often as forwards. A rescue reveals a monitoring gap. A monitoring gap reveals a deployment misconfiguration. A deployment misconfiguration reveals an architectural assumption. An architectural assumption reveals a discovery error. The "forward" direction of the pipeline is fictional; the work flows in every direction, all the time, and pretending otherwise produces methodologies that fight the work.
+
+Cyclic methodologies exist — Boehm's spiral, agile-family iterations, lean-startup loops. They are honest about feedback. They are usually not structurally explicit; the loop is described in prose, taught in workshops, internalised by practice. The Reckon Cycle is the Codex's contribution: a cycle that is *structural*. Each stage is a Dossier with a stream and a lifecycle. Transitions between stages are events. Reopening a "completed" stage produces a slip in the stage's Dossier. The cycle is event-sourced, just like the rest of the architecture.
+
+## The wheel, not the pipeline
+
+The image to hold is a wheel with ten spokes. The work moves around the wheel. At each spoke the work pauses briefly while a long-lived process (the stage's Dossier) accepts new slips and produces outputs that become inputs for the next spoke. The wheel turns clockwise most of the time; some spokes have back-arrows that allow work to flow against the rotation when downstream discovery surfaces upstream flaws.
+
+The arrows that matter:
+
+- **Rescue → Architecture.** An incident reveals that the system's structure cannot support the load, the security model, the failure mode, the regulatory requirement. Rescue patches the immediate damage; Architecture must redesign for the underlying issue.
+- **Rescue → Planning.** An incident reveals a missed dependency or a process bug that did not require architectural change but did require unplanned work. Planning absorbs the gap.
+- **Monitoring → Planning.** Production reveals that the deployed system is doing something the team did not intend. Planning schedules the corrective work.
+- **Testing → Planning.** Pre-deployment testing reveals defects that planning had not budgeted for; planning re-orders.
+- **Testing → Generation.** Tests fail; the code that fails the tests is in Generation; back it goes.
+
+The forward arrows (Inception → Discovery → Architecture → Planning → Generation → Testing → Deployment → Monitoring → Rescue) describe the *primary* direction of work. The back-arrows are not exceptions; they are part of how the wheel turns. A team that has no back-arrows is one of two things: very new (the back-arrows have not happened yet) or very dishonest (the back-arrows happen and get hidden). Honest teams record their back-arrows. Honest cycles are recordable.
+
+::: {.callout-tip}
+## Figure 7.1 — The Reckon Cycle
+
+The canonical wheel diagram (ten spokes labelled Inception through Orchestration, clockwise arrows along the rim, named back-arrows from Rescue/Monitoring/Testing inward, Orchestration drawn as a hub overlay rather than a position on the rim) will land in `figs/reckon-cycle.svg` in a future revision. For now: imagine a ten-spoke wheel with documented back-arrows. The wheel turns as many times as the work demands.
 :::
 
-Building software is a cycle, not a pipeline. The Reckon Cycle has ten stages. Each stage is a long-lived process with its own lifecycle (pending → active → paused → completed). Each stage can hand work back upstream when downstream surfaces a flaw.
+## Each stage is a Dossier
 
-## The ten stages
+The recursion is the load-bearing claim. A stage is not a "phase" in a Gantt chart. A stage is a long-lived process with an identity, a stream of events, a state rebuildable from those events, and a lifecycle.
 
-| Stage | Name | Phase | Duration |
-|---|---|---|---|
-| 1 | Inception | venture setup | short |
-| 2 | Discovery | division discovery | long |
-| 3 | Architecture | division design | long |
-| 4 | Planning | desk-level planning | long |
-| 5 | Generation | code crafting | long |
-| 6 | Testing | quality + acceptance | long |
-| 7 | Deployment | release | long |
-| 8 | Monitoring | observe in production | long |
-| 9 | Rescue | respond to incidents | long |
-| 10 | Orchestration | passive overlay, watches all 1–9 | always-on |
+Consider Planning for one Division. The team has decided to build the Lending Division in Q3 2026. *Lending-Q3-2026 Planning* is a Dossier. Its stream begins with a slip:
 
-## What this chapter will cover
+```erlang
+#{
+    event_type => <<"planning_initiated_v1">>,
+    stream_id  => <<"planning-lending-q3-2026">>,
+    data       => #{
+        division  => <<"lending">>,
+        quarter   => <<"2026-Q3">>,
+        initiator => <<"team-lead">>
+    }
+}
+```
 
-- Why the diagram is a **wheel**, not a pipeline. Rescue (stage 9) points back to Architecture (stage 3) when an incident reveals structural rot. The wheel turns as many times as needed.
-- Each stage is a Dossier in the meta-Division *guide_division*: a Discovery Dossier, an Architecture Dossier, a Planning Dossier, etc. Each has an explicit lifecycle (initiate → open → shelve → resume → conclude → archive).
-- The transitions between stages are themselves events: *architecture_concluded_v1* opens a Planning Dossier; *test_failed_v1* may shelve Planning and reopen Architecture.
-- The cycle is not a methodology in the SAFe / Scrum sense. It is a structural commitment: every long-lived activity is event-sourced, every transition is auditable, every reopening of a "completed" stage is recorded.
-- The *walking-skeleton doctrine*: ship an end-to-end thin slice on day one (Inception → Deployment, all ten stages exercised at toy scale) before adding features. The first sweep of the wheel happens fast and on purpose.
-- Anti-patterns: treating the wheel as a pipeline; treating stages as gates; treating Rescue as exceptional. Rescue is a stage like any other.
+Subsequent slips might be `desk_added_v1`, `desk_removed_v1`, `dependency_identified_v1`, `risk_recorded_v1`, `planning_shelved_v1`, `planning_resumed_v1`, `planning_concluded_v1`. The Planning Dossier evolves through its lifecycle — initiated, open, possibly shelved while a higher-priority Division gets attention, resumed when bandwidth returns, and concluded once the planned slate is handed off to Generation.
 
-## The wheel diagram
+Each of the ten stages has Dossiers of this kind. *Architecture* has Architecture Dossiers, *Generation* has Generation Dossiers (typically one per Division being built), *Monitoring* has Monitoring Dossiers (typically one per deployed Division-environment pair). The stages are *kinds of Dossiers*; the cycle holds *all of them*.
 
-The chapter will lead with a 10-spoke wheel diagram, with back-arrows from Rescue to Architecture, from Monitoring to Planning, from Testing to Planning. The arrows make the cyclical commitment visible.
+This recursion has practical consequences:
+
+- **Audit.** Why was Lending deployed with the configuration it had on 2026-08-14? Replay the Deployment Dossier for *lending-prod*. The slip stream tells you what was decided and when.
+- **Resumption.** Why is Planning shelved? Look at the most recent `planning_shelved_v1` slip; the data field carries the reason. When the reason resolves, append `planning_resumed_v1`.
+- **Transition.** When does Generation get to start? When Planning's stream contains `planning_concluded_v1`. A Process Manager (see @sec-pipelines) listens for the conclusion event and initiates the corresponding Generation Dossier. The transition is an event, not a meeting.
+
+The point is not that every Planning meeting becomes a stream entry — that direction lies madness. The point is that *decisions and transitions* are streamed; the meeting outputs become slips; the audit trail accumulates without anyone tracking it manually.
+
+## The walking-skeleton doctrine
+
+Before the wheel turns even once at full speed, it must turn once at toy speed.
+
+The doctrine: on day one of any new Division, ship an end-to-end thin slice that exercises every spoke of the wheel — Inception through Monitoring — at minimal scope. One Dossier-initialisation Desk. One projection. One query. Wired to the event store, deployed to all environments, verified working. No features beyond that. Just enough to prove the wheel can turn.
+
+The checklist:
+
+- [ ] Codebase scaffold (CMD, PRJ, QRY apps; the slicing in place; the Pizza diagrammable)
+- [ ] CI/CD pipeline (build, test, deploy stages, all green)
+- [ ] GitOps repositories for each environment (test, staging, production)
+- [ ] One Desk: typically `initialize_{dossier}_v1`, which creates an empty Dossier on demand
+- [ ] One projection writing one read-model table
+- [ ] One QRY endpoint that reads from that table
+- [ ] Telemetry plumbed from end to end
+- [ ] Deployed to all environments
+- [ ] Verified working with a probe (issue the command in test, observe the read-model update, query and confirm)
+
+This is Cockburn's walking skeleton, brought into the cyclic framing. The skeleton's value is not the features it provides (none) but the *paths it proves walkable*. Every later feature lands on top of paths that already work. The first deployment is the most informative one; if Deployment cannot deploy a near-empty Division, Deployment will not be able to deploy a full one, and the discovery that fact-shaped problem now costs ten times less than discovering it three months later under a real release pressure.
+
+The skeleton is the first lap of the wheel. The wheel keeps turning, faster, with more cargo, after that.
+
+## The stages, walked
+
+What follows is one paragraph per stage, focused on identity and outputs. Detailed practice for each lives in the team's own runbooks; the Codex's claim is that each stage is *real work* with a *Dossier shape*, not an item in a project plan.
+
+### Inception (1)
+
+A new initiative needs to come into being. Someone has identified a problem worth solving, a Division worth building, a Domain extension worth scoping. Inception's Dossier captures the original brief, the intended audience, the success criteria, the constraints. It concludes when there is enough material to enter Discovery — the brief is *good enough to discover from*, not *good enough to build from*. Output: an Inception slip stream and a brief artefact.
+
+### Discovery (2)
+
+The team learns the Domain. Existing systems, existing data, existing user expectations, existing pain. The Discovery Dossier records what was found and from whom. Event-storming workshops, expert interviews, system-cartography all produce slips. Discovery concludes when the team has identified the Divisions to build, the integration boundaries between them, and the Dossier shapes inside each Division. Output: a Division catalogue, an integration map, candidate Dossier identifications.
+
+### Architecture (3)
+
+Design begins. For each Division identified in Discovery, the team works out the Pizza: the CMD slices needed, the projections and queries that read-side requires, the integration facts the Division emits, the integration facts it consumes. Decisions vs Dossiers are nominated. The Architecture Dossier records the design decisions, the alternatives considered, the rationale. Architecture concludes when the design is *implementable* — not perfect, not unanimous, just sufficient to start Generation. Output: design documents, a slice inventory, an integration contract.
+
+### Planning (4)
+
+The slice inventory becomes a sequence. Dependencies are noted (this Desk requires that projection; this projection requires that integration fact). The team commits to an order, a cadence, an estimate. Planning Dossiers may shelve and resume freely as priorities change; the lifecycle accommodates this. Planning concludes when the next slate is firm enough for Generation to start. Output: a build plan, a dependency graph, an estimate (with appropriate uncertainty bars).
+
+### Generation (5)
+
+Code is written. Each slice listed in Planning becomes a folder in the Pizza. The walking-skeleton doctrine applies inside Generation too: each slice gets its scaffold first (command, event, handler, supervisor, projection placeholder), then its tests, then its full implementation. Generation Dossiers track per-slice progress; the slips are typically routine (`desk_scaffolded_v1`, `desk_implemented_v1`, `desk_tested_v1`). Generation concludes per-slice; the Division-level Generation Dossier concludes when all planned slices are in. Output: working code that compiles and passes its tests.
+
+### Testing (6)
+
+Quality and acceptance. Unit tests have run continuously during Generation; Testing here means integration, acceptance, performance, and security. Test Dossiers record what was tested and what was found. Testing's back-arrows are routine: failures send slips to Generation (the code is wrong) or to Planning (the requirements are wrong) or to Architecture (the design cannot satisfy the requirement). Testing concludes when the Division meets its acceptance criteria. Output: a green test matrix, a release-readiness signal.
+
+### Deployment (7)
+
+The release. The GitOps repositories for each environment receive the new version; the cluster reconciles to it; health checks pass. Deployment Dossiers record what was deployed where and when, with which configuration, by whom. The discipline: code repositories and GitOps repositories are *separate*, and changes flow through declared events (a `deployment_proposed_v1` slip enters Deployment's stream; the reconciler observes it; a `deployment_succeeded_v1` slip closes the loop). Output: a running Division in production.
+
+### Monitoring (8)
+
+The Division is observed. Telemetry flows from production to dashboards; alerts fire when thresholds breach; routine inspection happens. Monitoring Dossiers carry the slips that matter — *latency_threshold_crossed_v1*, *error_rate_anomalous_v1*, *deployment_drift_detected_v1*. Most of monitoring is silent — the absence of slips is the normal state. The presence of a slip is information. Monitoring concludes only when the Division is decommissioned; while the Division lives, its Monitoring Dossier accumulates.
+
+### Rescue (9)
+
+When something goes wrong, Rescue happens. An incident is declared, a Rescue Dossier opens, slips record the response (`incident_declared_v1`, `mitigation_applied_v1`, `root_cause_identified_v1`, `incident_resolved_v1`, `postmortem_completed_v1`). Rescue's back-arrows feed the wheel: a postmortem identifies an architectural flaw and reopens Architecture; identifies a missed test and reopens Testing; identifies a deployment script error and reopens Deployment. Rescue is not exceptional. Rescue is a stage of normal operation, treated normally, recorded as Dossiers, audited like everything else.
+
+### Orchestration (10)
+
+Always on. Orchestration is the passive overlay that watches the other nine — it is the cycle's awareness of itself. Orchestration Dossiers accumulate slips that note transitions, anomalies, paused work, resumed work, and patterns across multiple stages. Orchestration's outputs are *suggestions*: this Division has been in Planning for three months, is the plan still credible? This Rescue has surfaced four flaws against the same architectural assumption, is it time to redesign? The role exists because humans in the cycle benefit from someone watching the cycle for them.
+
+## Transitions are events
+
+Between the stages, work flows via events. *Architecture concludes* — an `architecture_concluded_v1` slip enters the Architecture Dossier. A Process Manager (yes, the same pattern as @sec-pipelines) subscribes to that event and dispatches a `planning_initiated_v1` command into the Planning Department. The new Planning Dossier opens, carrying the architecture's output as input.
+
+This is the recursion at work. The build process is wired the same way as the systems it builds. The integration between stages uses the same Process Managers, the same Pizza Architecture, the same Dossier shape. Reusing the architecture saves invention (the team already knows how to think about PMs from building production code) and saves substrate (the same event store, the same projections, the same query patterns serve the meta-system).
+
+Implementation note: the meta-system is typically deployed as its own Division (often called something like *guide_venture*) with its own CMD/PRJ/QRY structure. The Divisions it tracks are external; the meta-Division coordinates them via events on the mesh. The recursion is real but not infinite — the meta-Division is itself built using the cycle, and that's where the recursion stops.
+
+::: {.callout-note}
+## Counterclaim and response
+
+**Counterclaim:** *This is just SAFe / Scrum / waterfall with new names. The ten stages are gates; gates are bureaucracy; bureaucracy slows teams down.*
+
+**Response:** SAFe and similar frameworks prescribe *procedure*: who attends which meeting, what artefacts each ceremony produces, how stories flow through which boards. The Reckon Cycle prescribes *structure*: stages are real work with real Dossiers; transitions are events; back-arrows are recorded. The Codex does not say what a Planning meeting should look like; it says that Planning's decisions accumulate as slips in a stream. Teams adapt the ceremony to fit their context; the Dossier shape stays the same. A team that wants to run the cycle with a single weekly meeting can; a team that wants daily standups can; both produce the same Dossiers. The discipline is in the recording, not in the meeting.
+
+The "ten gates" framing is also wrong on its face. The wheel turns *concurrently*: Inception of one Division runs while Generation of another and Monitoring of a third all happen simultaneously. The stages are *kinds of work*, not *positions in a queue*. A team with three Divisions has many active Dossiers across many stages at any given moment; the wheel rolls them all in parallel.
+:::
+
+## What this enables
+
+With the Reckon Cycle, the meta-question — *how do we organise the building of this software* — has the same answer as the question Part I has been answering all along: Dossiers in the Pizza, transitions via PMs, integration through events. The architecture is recursive. The discipline scales.
+
+Part II is now possible. With the patterns of Part I in place, Part II walks the actual libraries that make the patterns real: *reckon-db* as the event store, *evoq* as the framework with its twenty-one behaviours, *reckon-gateway* and *reckon-proto* as the polyglot ingress. The library worked example in @sec-library brings everything together. The remainder of the book is, in effect, a guided tour of the working implementations of Part I's commitments.
+
+The patterns precede the libraries. The libraries respect the patterns. Read Part I as the *why*; read Part II as the *how*.
