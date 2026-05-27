@@ -1,69 +1,281 @@
 # Antipatterns {#sec-antipatterns}
 
-::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
-:::
+This chapter is a catalogue, not an essay. Each entry describes one mistake the Codex has encountered often enough to name. The mistakes are not personal failures; they are *common reasoning failures* — moves that look right in isolation and produce systems that hurt later.
 
-A catalogue of mistakes the Codex has seen often enough to name. Each entry: the antipattern, why it is tempting, what breaks, the fix.
+Each entry follows the same template:
 
-## Coverage
+- **Pattern.** The shape of the wrong code or structure.
+- **Why it tempts.** What makes someone reach for it.
+- **What breaks.** The downstream consequence.
+- **Fix.** The Codex's correction, cross-referenced where applicable.
 
-The chapter will collect the load-bearing antipatterns into themed sections. The categories below match the corpus's internal taxonomy; the entries here are de-mythologised — *antipatterns*, not *demons*, with clinical headings.
+Consult this chapter when something feels wrong in a slice you are reviewing. Read it straight through if you are new to the architecture; the catalogue functions as a list of mistakes you can now avoid having to make yourself.
 
-### Event sourcing — aggregates, events, envelopes
+## Event sourcing — aggregates, events, envelopes
 
-- Reading from read models during event flow (the cardinal sin: breaks replay determinism)
-- Flattening event envelopes into business data
-- Using evoq without reckon-db ("in-memory event sourcing" — there is no such thing in production)
-- Running aggregates without the aggregate behaviour
-- Manual event emission outside the aggregate
+### Reading from read-models during event flow
 
-### Naming — names that do not scream
+**Pattern.** An aggregate's `apply/2` (or any code path inside event-rebuild) reads from a database, a read-model, a cache, an external service, anything that varies between rehydrations.
 
-- CRUD verbs in event-sourced commands
-- Technical suffixes (`_handler`, `_manager`, `_processor`)
-- Parameterised phase lifecycles ("start_phase" instead of the verb-specific lifecycle)
-- Generic file names in slice folders
+```erlang
+%% In apply/2 of the Loan aggregate
+apply(#loan_issued_v1{borrower_id = BId} = E, State) ->
+    case query_borrower_open_loans(BId) of    %% the sin
+        N when N >= 5 -> error(too_many);
+        _             -> State#loan_state{...}
+    end.
+```
 
-### Structure — code organisation
+**Why it tempts.** The validation feels like it should be near the state where the violation would be visible. The read-model has the data; reading it inside the aggregate seems natural.
 
-- Horizontal layer folders (`services/`, `repositories/`, `utils/`)
-- Process Managers nested inside Desks (PMs are sibling slices)
-- Centralised listener supervisors
-- Generic god modules
+**What breaks.** Replay determinism. Every time the aggregate is rehydrated, `apply/2` runs over the history. The read-model's value at rehydration time may differ from its value at the original write time. A valid event becomes a crashing event. The system can no longer rebuild itself.
 
-### Projections — read models
+**Fix.** Pre-load cross-entity facts in a command pipeline (@sec-pipelines). The aggregate sees an enriched command; `apply/2` stays pure; the cross-entity facts are *captured in the resulting event* so the audit trail is complete.
 
-- Separate projections racing on a shared ETS table
-- Raw records in projections (always go through evoq envelopes)
-- Building projections without checkpoints
-- Status fields as strings instead of bit flags
+### Missing or wrong birth event
 
-### Integration — subscriptions, messaging, process managers
+**Pattern.** A Dossier's first stream entry is a routine update event, not a distinct birth event. The Dossier's "creation" is implied by the absence of prior events rather than recorded explicitly.
 
-- Bridging every domain event to the mesh (domain events stay local; integration facts cross)
-- Side effects on hope, not on fact (acknowledging before confirming)
-- Silent subscription pipeline failures
-- Bypassing evoq behaviours with raw gen_servers
-- Direct dispatch across Divisions (use a PM)
+**Why it tempts.** The birth event seems redundant — "registered" or "issued" already implies the entity began existing. Why have a separate `*_initiated_v1`?
 
-### Erlang / OTP — runtime gotchas
+**What breaks.** Projections cannot distinguish "this Dossier was just created" from "this Dossier was updated"; metadata that should be set once at birth (created_by, created_at) is mixed with metadata that changes over time. Audit replay produces ambiguous reconstructions of when the entity came into being.
 
-- `gen_server` self-call deadlock
-- Eager defaults in `maps:get/3`
-- Containerised reckon-db with dynamic BEAM node names
-- Not draining queued ticks in idempotent fan-in workers
+**Fix.** Every Dossier has an explicit birth event with a `*_initiated_v1` or `*_opened_v1` or equivalent name. The birth event carries one-time metadata (creator, initial brief, originating event-id) that no subsequent event re-sets. Subsequent events refine state without re-declaring origin.
 
-### Release, testing, packaging
+### Flattening event envelopes into business data
 
-- Forgetting to bump `.app.src` versions before tagging
-- Hex packages without `debug_info` (dialyzer can't see them)
-- EDoc-incompatible markdown backticks in `@doc` blocks
-- Generated `doc/` checked into the repo
+**Pattern.** A projection reaches into the event envelope's plumbing — `event_id`, `position`, `timestamp` — and stores those fields in the business read-model alongside genuine business data.
 
-## Reading order
+**Why it tempts.** The envelope fields are right there; they look like data; storing them feels like preserving information.
 
-Consult this chapter when something goes wrong. Read straight-through is allowed but exhausting.
+**What breaks.** The read-model conflates *infrastructure metadata* (used for ordering, idempotency, debugging) with *business state* (the things queries are actually about). Refactoring the read-model becomes harder because removing an envelope field looks like a business-data migration. Replays produce different envelope values than the originals (event_ids are re-issued on replay), changing read-model contents without changing the business meaning.
 
-Each entry follows a fixed template: *Antipattern → Why it is tempting → What breaks → The fix → See also*.
+**Fix.** Projections receive an `evoq_envelope` containing both the envelope and the event; they consume the *event* for business data and the *envelope* for infrastructure concerns (idempotency keys, ordering). Read-models hold only business data unless infrastructure metadata is genuinely user-facing.
+
+### Manual event emission outside the aggregate
+
+**Pattern.** A non-aggregate gen_server or worker writes events directly to the event store, bypassing the aggregate behaviour.
+
+```erlang
+%% In some_worker.erl, NOT inside an aggregate
+reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
+    #{event_type => <<"loan_issued_v1">>, ...}
+]).
+```
+
+**Why it tempts.** Sometimes the worker has all the information needed; spinning up an aggregate process to emit one event feels like ceremony.
+
+**What breaks.** The aggregate is no longer the single point of validation for the stream. Two writers (the aggregate and the worker) can append concurrently; the worker's writes bypass the aggregate's `execute/2` validation; invariants the aggregate was supposed to enforce silently degrade.
+
+**Fix.** Every write to a Dossier's stream goes through the aggregate. If a worker needs to cause an event, it dispatches a command and the aggregate produces the event. The discipline is uniform: one stream, one aggregate, one validator.
+
+## Naming — names that do not scream
+
+### CRUD verbs in event-sourced commands
+
+**Pattern.** Commands named `create_user_v1`, `update_loan_v1`, `delete_membership_v1`. The corresponding events: `user_created_v1`, `loan_updated_v1`, `membership_deleted_v1`.
+
+**Why it tempts.** CRUD verbs are universal; every developer knows them; they require no domain understanding.
+
+**What breaks.** The event names communicate *that something changed in storage*, not *what happened in the business*. Projections handling `loan_updated_v1` must branch on payload to know which kind of update — was the loan renewed, returned, flagged overdue, written off? The branch could have been the event type. The audit trail says "the loan was updated, again, again, again" instead of "the loan was renewed, returned".
+
+**Fix.** Use business verbs: `register_user`, `renew_loan`, `archive_membership`. The verb names the actual change; the event inherits the verb in past tense. See @sec-screaming for the full discipline.
+
+### Technical suffixes on slices and modules
+
+**Pattern.** Module or folder names ending in `_handler`, `_manager`, `_processor`, `_service`, `_helper`, `_util`, `_impl`, `_worker`.
+
+**Why it tempts.** Frameworks teach these suffixes. They are easy to type when no specific name comes to mind. They survive code review because they look "professional".
+
+**What breaks.** The suffix hides the meaning. A reader opening `LoanService` learns nothing they did not already suspect; they must open the file to find out what it does. The folder-walk test (@sec-screaming) fails. Onboarding takes longer.
+
+**Fix.** Name modules for the business outcome they produce. *Process* is not what code does for a living; *process orders*, *fulfil shipments*, *issue refunds* — these are what code does. Technical names are acceptable only at the *crust* of the Pizza, where infrastructure adapters genuinely have technical concerns.
+
+### Generic lifecycle verbs
+
+**Pattern.** Every long-lived process uses the same set of verbs: `start_phase`, `pause_phase`, `resume_phase`, `complete_phase`.
+
+**Why it tempts.** Lifecycle is a real abstraction; sharing one vocabulary across many processes seems to save effort.
+
+**What breaks.** The shared vocabulary obscures the per-process specifics. *Phase* tells you nothing about what kind of phase. *Planning* phases shelve and resume; *Rescue* phases escalate and resolve; *Discovery* phases conclude with a catalogue. Each process has its own real verbs that describe its own work.
+
+**Fix.** Each long-lived process has its own lifecycle verbs that name *what it does at each transition*. Planning has `open`, `shelve`, `resume`, `conclude`. Rescue has `declare`, `mitigate`, `resolve`, `postmortem`. The verbs differ because the work differs.
+
+## Structure — code organisation
+
+### Horizontal layer folders
+
+**Pattern.** Top-level folders named `services/`, `controllers/`, `repositories/`, `models/`, `utils/`, `helpers/`.
+
+**Why it tempts.** Frameworks scaffold projects this way. It looks consistent.
+
+**What breaks.** Each capability is scattered across many folders. To understand "issuing a loan" the reader must trace through `controllers/LoanController.java` → `services/LoanService.java` → `repositories/LoanRepository.java` → `models/Loan.java` — files that also contain unrelated code for dozens of other capabilities. Changing one capability touches files in many folders; pull requests fan out; reviewers lose focus.
+
+**Fix.** Vertical slicing (@sec-pizza). Each capability is one folder containing every artifact for that capability. The folder name screams the capability.
+
+### Process managers nested inside Desks
+
+**Pattern.** A Desk folder contains its own process manager sub-folder, treating the PM as a child of the Desk that triggers it.
+
+```
+apps/cmd_lending/src/issue_loan/
+├── issue_loan_v1.erl
+├── ...
+└── on_book_loanable/                  %% the wrong place for a PM
+    └── on_book_loanable.erl
+```
+
+**Why it tempts.** The PM and the Desk it triggers are conceptually related; nesting them shows the relationship.
+
+**What breaks.** The PM is hidden inside the Desk's folder. A reviewer browsing the CMD app's top-level slice list does not see the PM. The integration point with the upstream Division becomes invisible at the filesystem level. The PM also no longer has its own supervisor, idempotency story, or lifecycle — it inherits the Desk's.
+
+**Fix.** PMs are *sibling slices* in the target Division's CMD Department, one folder up from the Desks they may trigger. The folder name follows the convention `on_{source_event}_{verb}_{target}` (@sec-pipelines). Each PM owns its supervisor and its own slice; it appears in the CMD app's top-level slice list right alongside the Desks.
+
+### Generic god modules
+
+**Pattern.** A single module that handles many capabilities — `LoanManager`, `OrderProcessor`, `UserService`. Its public functions span the Division's surface; its file is hundreds or thousands of lines.
+
+**Why it tempts.** Related operations seem to belong together; the module name groups them.
+
+**What breaks.** The module's interface grows linearly with the Division's capability count. Every capability change touches the same file; merge conflicts proliferate; tests slow down (the whole module reloads); the file becomes a coordination bottleneck.
+
+**Fix.** Each capability is its own slice with its own modules. Shared concerns (helpers used by many slices) live in adjacent shared libraries, not in a god module within a slice's folder.
+
+## Projections — read models
+
+### Separate projections racing on a shared table
+
+**Pattern.** Two projections subscribe to different event types but both write to the same ETS table (or SQLite table). The projections run in separate processes; their writes are not coordinated.
+
+**Why it tempts.** The read-model has columns that are naturally updated by different events; building one projection per column seems modular.
+
+**What breaks.** Race conditions on the shared table. Projection A writes a row from one event; projection B is about to update the same row from a different event; the order of arrival determines what's seen. Worse, if event A precedes event B in the log but B's projection finishes first, the read-model is briefly inconsistent — and a downstream query might catch it in that state.
+
+**Fix.** Merge projections that write to the same table into one projection that subscribes to all the relevant event types. The merged projection serialises its writes; race-free. Use separate projections only when they write to *different* tables.
+
+### Projections without checkpoints
+
+**Pattern.** A projection subscribes to events but does not persist its position; on restart, it begins from the beginning of the event log or from an arbitrary recent point.
+
+**Why it tempts.** Skipping the checkpoint store saves implementation effort; for small streams, replay-from-zero is "fast enough".
+
+**What breaks.** As the event log grows, replay-from-zero becomes expensive. Restarts cause the projection to fall behind for minutes or hours. If the projection's read-model is queried during this window, users see stale or empty data.
+
+**Fix.** Use `evoq_projection`'s built-in checkpoint mechanism (@sec-evoq). Checkpoints persist after each batch; restart resumes from the right position; replay time is bounded by retry-window not log length.
+
+### Inline projections inside the CMD aggregate
+
+**Pattern.** The CMD aggregate, after appending an event, directly updates the read-model database in the same call.
+
+**Why it tempts.** The read-model needs to be up-to-date when the user's next query arrives; updating it synchronously seems to satisfy that.
+
+**What breaks.** The aggregate's transactional boundary now includes the read-model. Read-model failures fail the command. Read-model schema changes require coordinated CMD deployment. Replay rebuilds become impossible (the read-model is updated inline, not subscribable from the event log).
+
+**Fix.** Projections subscribe to the event log asynchronously. Read-models are eventually consistent. For commands that need session-level consistency, the command returns the *new aggregate state* so the caller does not depend on read-model timing. See @sec-pipelines for the session-level pattern.
+
+## Integration — subscriptions, messaging, process managers
+
+### Bridging every domain event to the mesh
+
+**Pattern.** A Division publishes *every* internal event to the inter-Division mesh, on the theory that other Divisions might want them.
+
+**Why it tempts.** Maximum-information feels safe. Downstream consumers can pick what they need.
+
+**What breaks.** Internal event shapes leak across the boundary. Other Divisions write code against Catalogue's internal events; refactoring those events now breaks the other Divisions. Catalogue loses its ability to evolve internally. Worse, internal events that should not be visible (audit-trail entries, internal-only state transitions) are exposed.
+
+**Fix.** *Domain events stay local; integration facts cross.* Each Division declares explicit, versioned integration facts that describe what other Divisions can depend on. Internal events stay inside the Division. A dedicated PRJ-side slice (`*_to_mesh`) translates internal events into facts at the boundary. See @sec-pipelines.
+
+### Side effects on hope, not on fact
+
+**Pattern.** A handler dispatches an asynchronous command and immediately performs a side effect that depends on the command's success — sending a confirmation email, charging a card, releasing inventory — without waiting for the resulting event.
+
+**Why it tempts.** Asynchronous dispatch is faster than synchronous; the user gets a faster response.
+
+**What breaks.** When the asynchronous command fails, the side effect has already happened. The user got a confirmation email for an order that did not actually save. The card was charged for an item that did not ship. The inventory was released for a sale that did not commit.
+
+**Fix.** Subscribe to the *fact* (the event), not to the hope (the command being dispatched). Confirmation emails go in an event handler that fires on `order_confirmed_v1`, not on `place_order_v1` being dispatched. The side effect happens after the truth is recorded, not before.
+
+### Direct dispatch across Divisions
+
+**Pattern.** Division A's command handler, upon success, directly invokes Division B's command API.
+
+**Why it tempts.** It is the most obvious way to make B do something when A does something.
+
+**What breaks.** A now depends on B's API surface, B's availability, B's error semantics. Changes to B require coordinated changes to A. B's downtime takes A down. The two Divisions' release cycles couple. The integration is invisible — neither codebase has a clear place where the cross-Division interaction lives.
+
+**Fix.** A emits an integration fact; B's CMD app contains a sibling-slice Process Manager that subscribes to that fact and dispatches the local command. The PM is the *single explicit integration point*; A and B both stay autonomous. See @sec-pipelines.
+
+## Erlang / OTP — runtime gotchas
+
+### gen_server self-call deadlock
+
+**Pattern.** A `gen_server`'s callback (`handle_cast`, `handle_call`, `handle_info`) calls a function that synchronously calls back into the same `gen_server`.
+
+```erlang
+%% In reckon_db_leader handle_cast({activate, StoreId}, State):
+%%   → save_default_subscriptions(StoreId)
+%%     → subscribe/5
+%%       → setup_event_notification
+%%         → reckon_db_leader:is_active(StoreId)  %% calls itself
+%%           → DEADLOCK
+```
+
+**Why it tempts.** The chain of calls grows organically; each step seems harmless; the deadlock is invisible at any single layer.
+
+**What breaks.** The `gen_server`'s mailbox holds the call; the same process cannot service it because it is busy with the current callback. The process hangs until timeout, then crashes. Production systems see periodic 5-second pauses with no clear cause.
+
+**Fix.** Asynchronous patterns: `gen_server:cast` for fire-and-forget self-notifications, separate workers for tasks that need synchronous calls back into the parent. The discipline: a `gen_server` callback may not call itself synchronously, directly or transitively. Static analysis tools and code review catch most cases; the rest surface as production hangs and need the trace tools.
+
+### Idempotent fan-in workers that do not drain queued ticks
+
+**Pattern.** Multiple producers send `Pid ! tick` to one worker; the worker processes one tick per `handle_info` call.
+
+**Why it tempts.** It seems to work in tests where producer rates are low.
+
+**What breaks.** Under load, producers fan in faster than the worker drains. The mailbox grows; the worker processes ticks that are no longer relevant; the system falls behind.
+
+**Fix.** At the top of `handle_info(tick, State)`, drain all queued ticks before processing: `receive tick -> ok after 0 -> ok end` (looping). One tick processed per drain; old queued ticks dropped. The worker is idempotent — processing once or many times produces the same effect — so dropping is safe.
+
+## Release — versioning, testing, packaging
+
+### Forgetting to bump `.app.src` versions before tagging
+
+**Pattern.** A team creates `git tag v0.2.0` but leaves `src/myapp.app.src` declaring `{vsn, "0.1.0"}`. The tag and the application version disagree.
+
+**Why it tempts.** Bumping the version is one small step in a release routine; it is easy to forget when the rest of the routine is mechanical.
+
+**What breaks.** BEAM's runtime reports the *application's* version, not the *tag's*. Logs say version 0.1.0; health endpoints report version 0.1.0; the OCI image label says 0.2.0. Debugging mismatched-version reports becomes impossible. Worse, tag deletion is destructive: if CI already built on `v0.2.0`, the image is published with wrong metadata that cannot be fixed by re-tagging.
+
+**Fix.** Bump `.app.src` *first*. Commit. Then tag. The git tag is a *label*; the `.app.src` is the *truth*. They must match. The release process has the order: version-bump → commit → tag, never the other way around.
+
+### Hex packages without debug_info
+
+**Pattern.** An Erlang library is published to hex.pm without `debug_info` in the compile options.
+
+**Why it tempts.** Production-ready code "should not need" debug info; the package is smaller without it.
+
+**What breaks.** Dialyzer cannot analyse the published beams. Consumers' dialyzer runs cannot type-check the library's surface. Type errors that should be caught at compile time slip into production.
+
+**Fix.** Always include `debug_info` in the hex package's compile options. The size cost is small; the type-safety benefit is the entire point of using a typed-Erlang ecosystem.
+
+### EDoc-incompatible markdown in `@doc` blocks
+
+**Pattern.** Erlang `@doc` blocks use markdown backticks and double-bracket binaries that EDoc's XML-like parser rejects.
+
+```erlang
+%% @doc Conditionally appends events. Returns `{ok, LastSeq}' on
+%% success or `{error, {context_changed, MaxSeq}}' on conflict.
+%% Pre-DCB backings return `{error, integrity_not_supported_in_dcb_v1}'.
+```
+
+**Why it tempts.** Markdown is universal; backticks for code are intuitive; binaries in Erlang are written `<<"...">>`.
+
+**What breaks.** EDoc fails the entire docs build. `rebar3 ex_doc` cannot produce hexdocs. The package ships without API documentation.
+
+**Fix.** Plain prose in `@doc` blocks. Use Erlang-quoting style (`code'`) sparingly; avoid `<<"...">>` literals (rewrite as "the binary `\"_dcb\"`"); avoid backtick-bracket-comma-bracket-backtick. Run `rebar3 ex_doc` as part of pre-release verification; treat doc build failures as release blockers.
+
+## What this enables
+
+The catalogue is short by design. The Codex has seen these mistakes; the Codex has also seen many more mistakes that were single-occurrence. The eighteen above appear in the catalogue because they recurred — across teams, codebases, years — and the recurrence indicated that the corresponding doctrine in Parts I and II needed an explicit countervailing entry.
+
+The glossary in the next chapter collects the load-bearing vocabulary of the book in one place, alphabetised, with cross-references. The two chapters together — antipatterns and glossary — give the reader a reference layer to consult once they are working with the architecture and meeting its edges.
