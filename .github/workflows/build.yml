@@ -18,6 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install librsvg (for SVG embedding in PDF)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
         with:
