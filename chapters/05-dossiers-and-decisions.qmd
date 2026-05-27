@@ -1,24 +1,270 @@
 # Dossiers and Decisions {#sec-dossiers}
 
+When a command arrives, the system has a choice to make. *Accept it, write events, move on*, or *reject it, write nothing, return an error*. The interesting question is what the system checks before choosing. That check is the *consistency boundary*: the smallest scope within which the system enforces its invariants atomically.
+
+Two answers exist in the event-sourcing literature. The Codex takes both seriously and uses both, with one as the default and the other as the escape hatch. This chapter is about which is which, and why.
+
+## The cardinal question
+
+A loan is being issued. The Borrower has already taken five books out; the library's policy is five at most. The system must reject the sixth issue. To do so, the system must know the Borrower's current open-loan count *at the moment the issue command lands*, and must guarantee that no concurrent issue can sneak in between the check and the write.
+
+The question is: what is "the moment"? What is the smallest scope within which the count-is-five fact and the issue-this-loan write happen together? Two camps answer differently.
+
+**The stream-per-aggregate camp** says: assign each Borrower an identity, give that identity a stream of events, and enforce concurrency at the stream-version level. When you write `loan_issued_v1` for Borrower #42, you write it to *that Borrower's stream*, with a precondition: *the stream's current version must equal what I think it is*. If it doesn't, your write conflicts and you retry. The stream is the consistency unit; the Borrower is the aggregate.
+
+**The aggregateless camp** says: never mind aggregates, the consistency unit is *the query that defines what you care about*. When you write `loan_issued_v1`, write it conditionally on *no event matching this tag-filter has appeared since I last looked*. The tag-filter is the consistency unit; it can span streams, it can span entities, it can be redefined per write.
+
+Both are coherent. Both are in use in production systems. They lead to different architectures, different runtime characteristics, and different failure modes.
+
+## Two answers
+
+Take a moment with each.
+
+### Stream-per-aggregate
+
+Greg Young's CQRS pedagogy [@young2010cqrs], Eric Evans's tactical DDD [@evans2003ddd], Vaughn Vernon's implementation guide [@vernon2013iddd] — together they shaped a generation. The pattern is: each thing-with-identity gets its own stream; the stream's version is the optimistic-concurrency cursor; the aggregate is the unit of identity, lifetime, and concurrency, all at once.
+
+Implementations: EventStoreDB, Marten, Axon, and — relevant to this book — *reckon-db*.
+
+The pattern's strengths: aggregates are intuitive. They map to recognisable business concepts (an Order, a Customer, a Loan). They give you a place to put validation logic. They give you a stream you can replay to audit one specific thing. They give you a concurrency primitive that uses a single integer (the version number).
+
+The pattern's weaknesses: aggregates pre-decide the consistency boundary, and you sometimes get it wrong. An invariant that crosses two aggregates ("this email must be unique across all users") does not fit any single stream's version. Implementations work around this with sagas, process managers, or pre-loading cross-entity data into the command — solutions that work, with extra machinery. The aggregate, when right, is wonderful; when wrong, it forces architecture.
+
+### Aggregateless
+
+Rico Fritzsche [@fritzsche2024aggregateless] and Sara Pellegrini [@pellegrini2024dcb] have articulated the alternative. The pattern is: events are pure facts in a flat log; streams are *filter views* over that log; concurrency is enforced at append time against a *query*, not a stream version. You write a `loan_issued_v1` event with a precondition like "no event matching `borrower_id:42 AND event_type=loan_issued_v1 AND status=open` has appeared since seq N". The query defines the consistency boundary at write time.
+
+Implementations: FACTSTR, Pellegrini's reference implementations on [dcb.events](https://dcb.events).
+
+The pattern's strengths: invariants that cross entities are no harder than invariants on one entity. The query says what you care about; the query enforces it. There is no ceremony around "inventing" an aggregate to host a uniqueness check that doesn't naturally belong to any entity.
+
+The pattern's weaknesses: the consistency boundary is invisible until you read the write call. There is no folder you can open named *Loan* and find all the Loan logic in one place; the Loan logic is wherever someone wrote a query that mentions `loan` tags. Queries can be redefined per write, which is flexibility, but also drift. The audit story shifts from "replay this stream" to "replay these queries", and queries are not stable artefacts.
+
+Both camps agree that events are immutable, append-only, and replay-as-truth. They disagree on what the concurrency check protects.
+
+## The Codex's position
+
+The Codex commits to *stream-per-aggregate as the default*, with one important departure from the classical literature, and one carve-out.
+
+**The departure** is that the Codex's aggregates are *Dossiers*, not data-shaped entities. A Dossier is a process artefact — an Order is the history of one ordering process, a Loan is the history of one lending process, a Membership is the history of one membership process. Dossiers earn their stream not because they are *things* but because they are *processes-with-identity*. This is the substance of @sec-d5: the Dossier is identity, lifetime, structure, and concurrency, all together.
+
+The departure matters because the most common critique of aggregates — *you pre-decide the boundary and keep getting it wrong* — applies hardest to data-shaped aggregates. Process-shaped aggregates have clearer natural boundaries. The lending process starts when a loan is issued; it ends when the loan is returned or written off. That is one stream. The customer process starts when the customer is registered; it ends when the customer is closed out. That is another stream. The boundaries are events in the world, not modelling choices that can shift.
+
+**The carve-out** is that some invariants do not fit any Dossier. *No two Borrowers may hold a hold on the same ISBN at the same time* — that invariant does not belong to a Borrower (it spans many) or to a Book (which Book? the one being held, or the next one freed?) or to a Loan (which Loan? this isn't one). It belongs to *the universe of ISBN holds*, and the universe of ISBN holds is not a process — it is a constraint over the population of events. Inventing an `IsbnReservationsRegistry` Dossier to host this is ceremony. The carve-out is the *Decision*: a tag-filter check, used surgically, for invariants that genuinely span entities.
+
+The position holds because Dossiers cover the 90% case (anything with a process-shape) and Decisions cover the 10% case (anything genuinely cross-cutting), with both inside one stack and one mental model.
+
+## The Dossier
+
+A Dossier's concurrency primitive is the stream-version check.
+
+When code wants to add an event to a Dossier, it specifies the version it *thinks* the stream is at. The event store, atomically:
+
+1. Checks that the stream's current version equals the asserted version.
+2. If yes, appends the event(s) and bumps the version.
+3. If no, rejects the write with a version-conflict error.
+
+The check and the append are one operation. There is no window between them. Concurrent writers race, one wins, the loser retries.
+
+The Dossier's *state* — what the Dossier *thinks is true right now* — is rebuilt by folding the events. In Erlang, with the evoq framework, this is the `apply/2` callback of an `evoq_aggregate`: take the current state, apply one event, return the new state. The aggregate process holds the state in memory between commands; on first load, it replays the stream front to back; on idle, it passivates.
+
+The check inside `execute/2` (the command handler) uses that state. *Does the Borrower have fewer than five open loans? Is the Book loanable? Is the Borrower's membership active?* All of these are answered from the state the Dossier has built from its own events. The handler decides whether the command is acceptable; if it is, the handler returns the events to append; the event store enforces the version check at the moment of append.
+
+## A worked Dossier — issuing a loan
+
+The Lending Division's *issue_loan* Desk lives at `apps/cmd_lending/src/issue_loan/`. The slice contains the command, the event, the handler. The aggregate that hosts the handler is the *Loan* Dossier, defined at `apps/cmd_lending/src/loan_aggregate.erl`.
+
+Sketching the handler:
+
+```erlang
+%% In maybe_issue_loan.erl
+-spec decide(loan_state(), issue_loan_v1()) ->
+    {ok, [event()]} | {error, term()}.
+decide(#loan_state{status = none}, #issue_loan_v1{
+    borrower_id = BorrowerId,
+    book_id     = BookId,
+    due_date    = DueDate
+}) ->
+    %% State of THIS Loan dossier; it's currently empty (status=none)
+    %% because this is the first slip we are trying to add.
+    %% Cross-entity facts (borrower's open-loan count, book's loanable
+    %% status) arrive via the command pipeline -- see Chapter 6.
+    {ok, [#loan_issued_v1{
+        loan_id     = generate_loan_id(),
+        borrower_id = BorrowerId,
+        book_id     = BookId,
+        issued_at   = erlang:system_time(millisecond),
+        due_date    = DueDate
+    }]};
+decide(#loan_state{status = open}, #issue_loan_v1{}) ->
+    {error, loan_already_open};
+decide(#loan_state{status = returned}, #issue_loan_v1{}) ->
+    {error, loan_already_concluded}.
+```
+
+The state machine is the Dossier's own. *Can a `loan_issued_v1` slip be added to this Loan dossier? Only if this Loan is currently in state `none` — meaning no slips have been added yet.* The handler returns the event to append; the event store handles the concurrency.
+
+If two Borrowers race to issue loans, two *different* Loan Dossiers each accept their own `loan_issued_v1` slip. Each Loan has its own stream, its own version, its own concurrency cursor. They do not race against each other because they are different streams.
+
+If, somehow, the same Loan ID were issued to twice (perhaps a client retried after a timeout, perhaps an attacker), the second write would attempt to append to a stream whose version is no longer 0, and the version-conflict would surface. The Dossier rejects the duplicate at the store level, before the handler ever sees it.
+
+## The Decision
+
+A Decision's concurrency primitive is the *tag-filter check*.
+
+When code wants to write an event under a Decision's protection, it specifies a *tag filter* (a predicate over tags) and a *seq cutoff* (the highest sequence number it has observed for events matching that filter). The event store, atomically:
+
+1. Evaluates the tag filter against all events written to the DCB pseudo-stream.
+2. If no matching event has a seq strictly greater than the cutoff, appends the new events and returns the resulting seq.
+3. If any matching event has a higher seq, rejects the write with a `context_changed` conflict, carrying the new highest-matching seq.
+
+The Decision has no identity, no lifetime, no folder. It is a *pattern*, not a Dossier. The reckon stack implements it via the `evoq_decision` behaviour (see @sec-evoq) and the `append_if_no_tag_matches/4` primitive in *reckon-db* (see @sec-reckon-db).
+
+The tag filter is the consistency unit. It can be a flat list (*any of these tags*, *all of these tags*) or a recursive combination (*all of these filters*, *any of these filters*). The mechanics are described in @sec-reckon-db; the relevant fact for this chapter is that the filter can express invariants no single stream can.
+
+## A worked Decision — reserving an ISBN
+
+The library's Catalogue Division offers a *reserve_isbn* capability. A Borrower can place a hold on an ISBN before the book itself is available. The invariant: *only one reservation may be open per ISBN at any time*. (Library policy; one hold per ISBN keeps the queue simple.) The invariant spans the whole reservation population, not any single Borrower or Book.
+
+The slice at `apps/cmd_catalogue/src/reserve_isbn/` implements a Decision:
+
+```erlang
+-module(reserve_isbn).
+-behaviour(evoq_decision).
+
+-export([context/1, decide/2, retry_budget/0]).
+
+context(#{isbn := Isbn}) ->
+    %% Any event matching this filter participates in our boundary.
+    {all_of, [
+        <<"isbn:", Isbn/binary>>,
+        <<"kind:reservation">>
+    ]}.
+
+decide(ContextEvents, #{isbn := Isbn, borrower_id := BorrowerId}) ->
+    case has_open_reservation(ContextEvents) of
+        true ->
+            {error, isbn_already_reserved};
+        false ->
+            {ok, [#{
+                event_type => <<"isbn_reserved_v1">>,
+                data       => #{isbn => Isbn, borrower_id => BorrowerId},
+                tags       => [
+                    <<"isbn:", Isbn/binary>>,
+                    <<"kind:reservation">>,
+                    <<"borrower:", BorrowerId/binary>>
+                ]
+            }]}
+    end.
+
+retry_budget() -> 5.
+
+has_open_reservation(Events) ->
+    lists:any(
+        fun(#{event_type := <<"isbn_reserved_v1">>}) -> true;
+           (_)                                       -> false
+        end, Events).
+```
+
+Three things to notice about this slice.
+
+First, `context/1` *declares* the filter that defines the consistency boundary. The runtime reads events matching this filter, observes their highest seq, and that seq becomes the cutoff for the eventual write. The filter is *part of the Decision's contract*, just as the stream-id is part of a Dossier's contract.
+
+Second, `decide/2` is a *pure function* over `(context_events, command)`. No I/O, no random, no clock. The runtime re-runs `decide/2` on every conflict, with refreshed context. If the function is not pure, retries produce different results and the system loses determinism. Side effects (logging, telemetry) belong outside the decision, in middleware.
+
+Third, the event carries the same tags the filter checks against. When this event commits, future Decisions with the same filter will *see* this event in their context. The event participates in its own consistency boundary. This is what makes the pattern work end-to-end.
+
+If two Borrowers race to reserve the same ISBN:
+
+1. Both read empty contexts. Both observe cutoff = -1 (no matching events).
+2. Both call `decide/2`. Both decide to issue `isbn_reserved_v1`.
+3. The Ra log linearises the appends. One commits at, say, seq N. Its events become visible to subsequent filter evaluations.
+4. The other's transaction evaluates the filter and finds a matching event at seq N > -1. The precondition fails. Its append aborts with `{context_changed, N}`.
+5. The runtime retries the loser. The retry reads the now-non-empty context, observes the reservation, calls `decide/2` again, which returns `isbn_already_reserved`. The error surfaces to the caller.
+
+Note: it is `decide/2` that produces the *domain* error (`isbn_already_reserved`), not the storage layer. The storage layer only knows that the filter matched something it didn't expect. The translation from "storage conflict" to "human-meaningful error" is the slice's job, done in `decide/2`.
+
+## The discrimination rule
+
+When to reach for which? The rule is short.
+
+**Use a Dossier when:**
+
+- The work has a natural identity-carrier — a Loan, a Membership, a Catalogue Entry. Open the codebase and a folder named after the carrier feels right.
+- There is a lifecycle — the work starts at one event, progresses through others, concludes.
+- Multiple Desks contribute to the same instance over time.
+- You want to be able to replay one specific instance from front to back and have it tell a coherent story.
+
+That covers approximately 90% of business work the book has seen.
+
+**Use a Decision when:**
+
+- The invariant spans the population — uniqueness across users, allocation across slots, rate-limits across tenants, idempotency keys across requests.
+- There is no natural "thing" to hang the invariant on, and inventing one would be ceremony.
+- The boundary is *the query*, not *the identity*.
+
+That covers most of the remaining 10%.
+
 ::: {.callout-note}
-## Chapter status
-Stub. Full chapter to follow in a subsequent session.
+## Counterclaim and response
+
+**Counterclaim:** *Inventing a `IsbnReservationsRegistry` aggregate to host the ISBN-uniqueness invariant is fine. Aggregates can be registries.*
+
+**Response:** They can, and the pattern works mechanically. The cost is that the registry-aggregate becomes a hot stream — every reservation in the system serialises through one Ra leader for one stream. The Decision pattern distributes the same work across the DCB pseudo-stream's tag index, which is built for this access pattern. The registry-aggregate also has no natural lifecycle (it begins at system boot, never ends), which makes it a Dossier in name only. When the work is genuinely cross-cutting, a Decision says so explicitly. Inventing a Dossier obscures the cross-cutting nature.
 :::
 
-The Dossier handles most consistency. The Decision handles the rest.
+The 90/10 split is empirical, not principled. In some Domains the split will be 80/20 or 95/5. Pay attention to the second number: when invented registries proliferate, the codebase is signalling that the Dossier shape is wrong for too many invariants and the Decision pattern is being avoided for non-technical reasons. The split should reflect the work, not the team's familiarity with one pattern over the other.
 
-## What this chapter will cover
+## The retry loop
 
-- The Dossier as concurrency unit: stream-version optimistic concurrency, the classical pattern.
-- The 90% case: invariants that live on a single identity (a Loan, a Membership, a Catalogue Entry) are Dossier invariants.
-- The 10% case: invariants that cross identities. Uniqueness checks (an ISBN reservation cannot be claimed twice). Allocation against shared resources (a hold queue with N positions). Rate limits across an entire Domain. Idempotency keys.
-- Why the 10% case does not fit the Dossier shape: inventing a "RegistryAggregate" is ceremony; sagas are overkill for a single conditional write.
-- The **Decision** pattern: conditional append on a tag-filter context query. The consistency unit is *a query*, not *a stream version*.
-- The implementation: `evoq_decision` behaviour in evoq; `append_if_no_tag_matches/4` in reckon-db.
-- The Decision retry loop: read context → decide → conditionally append → on conflict, refresh and retry, bounded budget.
-- Reference example: ISBN-reservation uniqueness in the lending library.
-- What this chapter is NOT: a critique of aggregateless event sourcing. The aggregateless case is principled; the Codex chooses Dossier-first because processes outnumber registries by 9 to 1 in the systems we have built.
+Decisions retry. Dossiers do too, in their way, but Decisions retry *more often* because the boundary is broader and conflicts are more common.
 
-## Sources
+The runtime (`evoq_decision_runtime:dispatch/3`) implements the loop:
 
-The chapter draws directly on the *reckon-db DCB guide* and *evoq decisions guide* for the implementation specifics. The doctrine — Dossier as the 90% default, Decision as the escape hatch — is the Codex's contribution.
+```
+Budget = Mod:retry_budget()                  -- typically 3 to 10
+for i = 0 to Budget - 1:
+    Filter   = Mod:context(Command)
+    Context  = read events matching Filter
+    Cutoff   = max(Context.seq, or -1 if empty)
+    case Mod:decide(Context, Command) of
+        {error, R} -> return {error, R}      -- domain error: do not retry
+        {ok, Events} ->
+            case append_if_no_tag_matches(Store, Filter, Cutoff, Events) of
+                {ok, _} -> return {ok, Events}
+                {error, {context_changed, _}} ->
+                    backoff(i); continue      -- retry with refreshed context
+                {error, R} -> return {error, R}
+            end
+    end
+end
+return {error, retry_budget_exhausted}
+```
+
+Three things to note.
+
+**Pure decide.** `decide/2` is re-run on every retry. It must be pure. The runtime guarantees the *context* is refreshed; the runtime does not guarantee the *clock* is the same, or that random numbers are the same. If the decision must use a clock, capture the clock value as part of the command before dispatch and pass it through; don't read the clock in `decide/2`.
+
+**Exponential backoff with jitter.** The backoff prevents thundering herds. Without it, a hot Decision under conflict would burn budgets in lockstep. With it, the natural variance separates retries enough for one to win.
+
+**Bounded budget.** The runtime does not loop forever. After `retry_budget()` attempts, it surfaces `{error, retry_budget_exhausted}`. The caller decides what to do — escalate, return an error to the user, queue for off-peak retry. Heavy contention on a Decision is a signal; surfacing it lets the caller respond rather than masking the contention with infinite retries.
+
+The Dossier's retry story is similar but usually simpler: most aggregate frameworks (evoq among them) handle one or two retries on version conflicts internally and surface the error after that. Dossier conflicts are rarer because the boundary is narrower (one stream, one identity).
+
+## What the aggregateless critique gets right
+
+The critique deserves a fair hearing.
+
+The aggregateless camp says: *aggregates pre-decide the consistency boundary, and you keep getting it wrong*. This is true of data-shaped aggregates. *Customer* and *Order* and *Account* are nouns; nouns are easy to start with and hard to evolve. As the business changes, the data shapes shift; the aggregate boundary that fitted last year fits awkwardly this year.
+
+The Codex's answer is that *process-shaped* aggregates (Dossiers) refactor differently. The lending process is what it is; its boundaries are events in the world (issue, return, archive). Refactoring a Dossier means changing how the *process* is modelled, which is a strategic change and a slow one. Refactoring a noun-aggregate means changing how the *data* is shaped, which is a tactical change and a fast one. The frequency of tactical refactors gives data-aggregates a bad reputation that process-aggregates do not deserve.
+
+The critique also says: *cross-entity invariants force you into sagas or process-manager dances*. True, when the invariant is genuinely cross-cutting and you only have aggregates. The Codex accepts this and offers two structural remedies: Decisions (this chapter, for invariants that resist any aggregate shape) and command pipelines (@sec-pipelines, for invariants that cross entities but are still single-decision in nature). Both let the architecture handle the cross-entity case without sagas.
+
+The critique notes that *reading from read-models inside the aggregate is forbidden* (a load-bearing constraint in evoq's discipline; reading state during event flow breaks replay). This is presented as a tell: a sign that the aggregate is the wrong abstraction. The Codex agrees the constraint is real and disagrees with the conclusion. The constraint is the *cost* of having a clean replay story, not an indictment of the abstraction; the structural workaround (command pipelines) preserves the replay determinism while solving the cross-entity decision problem.
+
+Where the Codex and the aggregateless camp disagree is the *frequency* of these cross-cutting cases. The Codex sees 10%, give or take. The aggregateless camp sees more. The frequency depends on the Domain, on the team, on the modelling discipline. The Codex's position is conditional: *if your work is mostly processes with identities, choose Dossiers and use Decisions sparingly; if your work is mostly population-level constraints with no identities, the aggregateless pattern fits you better*. The Codex's stack supports both inside one runtime.
+
+## What this enables
+
+The Codex has now named both its consistency primitives and stated which one to reach for first. The next chapter (@sec-pipelines) addresses the residual problem: *invariants that cross entities but are still per-decision* — the ones that don't quite need a Decision because the boundary is local to one command. Command pipelines pre-load cross-entity facts at the slice boundary, hand them to the Dossier as a self-contained decision input, and preserve replay determinism. With Dossiers (this chapter), Decisions (this chapter), and pipelines (next chapter), the architecture handles the full range of consistency boundaries it will encounter.
