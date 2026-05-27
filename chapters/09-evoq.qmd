@@ -4,7 +4,7 @@ reckon-db (@sec-reckon-db) is an event store. It knows how to append, read, subs
 
 evoq is the framework that turns reckon-db's storage primitives into an ergonomic platform for event-sourced systems. Its central design choice is to express every role in the architecture as an Erlang *behaviour* — a compile-time contract that captures what a particular kind of slice must implement and what guarantees the runtime will provide in return. Twenty-one such behaviours together form the surface a Division's code interacts with.
 
-This chapter walks the load-bearing behaviours and explains the discipline that the framework's shape enforces.
+This chapter walks the principal behaviours and explains the discipline that the framework's shape enforces.
 
 ## Why behaviours
 
@@ -194,7 +194,7 @@ loop while Budget > 0:
 return {error, retry_budget_exhausted}
 ```
 
-The runtime is the load-bearing detail. It enforces the *pure-decide* invariant (every retry re-runs `decide/2` with refreshed context), the *bounded-budget* invariant (the loop ends), and the *backoff* invariant (exponential with jitter, to prevent thundering herds). Slice code states *what* the Decision means; the runtime states *how* it operates.
+The runtime is the decisive detail. It enforces the *pure-decide* invariant (every retry re-runs `decide/2` with refreshed context), the *bounded-budget* invariant (the loop ends), and the *backoff* invariant (exponential with jitter, to prevent thundering herds). Slice code states *what* the Decision means; the runtime states *how* it operates.
 
 ## Event handlers and process managers
 
@@ -229,7 +229,7 @@ The Codex has seen Divisions built without evoq. They are not bad systems. They 
 
 ## The twenty-one behaviours, listed
 
-Aggregates, projections, decisions, event handlers, and process managers are the load-bearing five. Sixteen more cover the rest of the framework's surface. The full list is below, grouped by role; full reference detail lives in the evoq documentation.
+Aggregates, projections, decisions, event handlers, and process managers are the principal five. Sixteen more cover the rest of the framework's surface. The full list is below, grouped by role; full reference detail lives in the evoq documentation.
 
 | Behaviour | Role |
 |---|---|

@@ -16,7 +16,7 @@ What the book is not:
 - It is not a survey. Other patterns (CRDTs, projections-as-databases, sourcing over append-only logs in Kafka-shaped systems) are mentioned only where they sharpen our positions.
 - It is not neutral. Where there is a defensible position, the book takes one. Where there are real tradeoffs, the book names them. Where the literature is wrong, the book says so.
 
-A note on tone. The book has voice but no theatre. It will not personify the architecture or mythologise the practice. It will tell you what works, what does not, and why. If you want food for the soul, this is not your book. If you want food for the codebase, read on.
+A note on tone. The book has voice but no theatre. It will not personify the architecture or mythologise the practice. It will tell you what works, what does not, and why. If you want philosophy for its own sake, this is not your book. If you want patterns for your codebase, read on.
 
 ---
 

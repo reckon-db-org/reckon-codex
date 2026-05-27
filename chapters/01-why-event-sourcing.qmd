@@ -86,7 +86,7 @@ The replay property has three corollaries that matter in practice.
 
 **Audit is a query, not a project.** Regulated industries — financial services, healthcare, public infrastructure — pay enormous costs for audit. In a state-update system, audit requires either *change-data-capture infrastructure* (a parallel system that records what state-update systems would otherwise destroy) or *retention logs* (a parallel record that may diverge from the truth). In an event-sourced system, the events *are* the audit record; the only question is who is allowed to read them. The compliance cost moves from infrastructure to access control.
 
-These corollaries together explain why event sourcing has overwhelming adoption in regulated industries and overwhelming non-adoption in places like simple CRUD applications. The value-per-event-stored is high when audit and forensics are load-bearing; low when they are not.
+These corollaries together explain why event sourcing has overwhelming adoption in regulated industries and overwhelming non-adoption in places like simple CRUD applications. The value-per-event-stored is high when audit and forensics matter; low when they do not.
 
 ## Where event sourcing fits
 
@@ -116,7 +116,7 @@ Be honest about the contraindications.
 
 Some applications really are CRUD. The entity has a current state; the current state is all anyone cares about; nobody will ever ask "what did this look like a month ago?" Event-sourcing such a system pays for storage, projection plumbing, and conceptual overhead with no countervailing benefit. The discipline does not improve simple things; it improves complex things by giving them a coherent structure.
 
-If a team is building a TODO-list app, a personal finance tracker, a simple blog, an internal admin panel — and the team is confident that nobody will need historical analysis — *do not use event sourcing*. The architectural overhead is real and unrewarded.
+If a team is building a task-list app, a personal finance tracker, a simple blog, an internal admin panel — and the team is confident that nobody will need historical analysis — *do not use event sourcing*. The architectural overhead is real and unrewarded.
 
 ### Transactional ETL where the source is the truth
 
@@ -126,7 +126,7 @@ Some pipeline architectures do event-source the middle layer for replay-ability 
 
 ### Throwaway data
 
-Logs that age out after 30 days, click-stream events that accumulate too quickly to retain individually, telemetry samples that are aggregated and discarded. These workloads have a *fact-stream shape* superficially similar to event-sourced systems, but the events are not load-bearing — they are samples. Time-series databases, log-aggregation systems, and stream-processing frameworks fit better than event stores.
+Logs that age out after 30 days, click-stream events that accumulate too quickly to retain individually, telemetry samples that are aggregated and discarded. These workloads have a *fact-stream shape* superficially similar to event-sourced systems, but the events are not first-class facts — they are samples. Time-series databases, log-aggregation systems, and stream-processing frameworks fit better than event stores.
 
 ### Teams that cannot commit to the discipline
 

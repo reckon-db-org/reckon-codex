@@ -125,7 +125,7 @@ At the centre of the Pizza is the event store. Not a database. Not a repository.
 
 The choice is consequential. A database in the centre would mean the rings depend on its schema; a schema change ripples outward; the database is the source of truth for state. An event store does not work that way. The event store holds *events* — past tense, immutable, append-only. The rings derive everything they need by *folding* events: CMD rebuilds dossier state to validate; PRJ folds events into read-models; QRY reads those read-models without touching events directly.
 
-The event store is the centre because events are the most stable thing in the system. The names and shapes of events change rarely (and when they do, with explicit versioning — see @sec-screaming). The schemas of read-models change often; that is fine, because read-models are derived. The shapes of commands change often; that is fine, because commands are inputs. The events at the centre are the load-bearing invariant.
+The event store is the centre because events are the most stable thing in the system. The names and shapes of events change rarely (and when they do, with explicit versioning — see @sec-screaming). The schemas of read-models change often; that is fine, because read-models are derived. The shapes of commands change often; that is fine, because commands are inputs. The events at the centre are the architecture's stable point.
 
 In the running stack, the event store is *reckon-db* (@sec-reckon-db). It exposes append, read, subscribe, snapshot operations. The CMD ring's slices append events to it. The PRJ ring's slices subscribe to it. The QRY ring's slices query read-models built by the PRJ ring. The centre is a hub; everything connects to it; nothing in the centre depends on anything outside it.
 
@@ -163,7 +163,7 @@ You can: list the projection files. `find apps/qry_lending/src -name '*_to_*.erl
 
 > *This is just Clean Architecture with extra steps.*
 
-It is Clean Architecture *plus* vertical slicing. Clean gives you the rings; Pizza gives you the slices. Without the second cut, Clean is read by ring; the loan is scattered. With the second cut, the loan is in one folder. The "extra step" is the load-bearing one.
+It is Clean Architecture *plus* vertical slicing. Clean gives you the rings; Pizza gives you the slices. Without the second cut, Clean is read by ring; the loan is scattered. With the second cut, the loan is in one folder. The "extra step" is the decisive one.
 
 > *Vertical slicing makes shared cross-cutting concerns hard.*
 
@@ -181,4 +181,4 @@ A developer joining the team opens the project, sees the Divisions, opens one, s
 
 This is *screaming architecture*, which @sec-screaming covers in detail. The pizza enables the scream — without vertical slicing, screaming names cannot reveal a capability, because the capability is not in one place to be named. With vertical slicing, every capability has a folder and the folder gets to scream.
 
-The combination is the second load-bearing claim of this book: *the architecture, named well, is the documentation*. Chapter 4 takes that claim seriously and works out the naming rules that make it true.
+The combination is the second principal claim of this book: *the architecture, named well, is the documentation*. Chapter 4 takes that claim seriously and works out the naming rules that make it true.
