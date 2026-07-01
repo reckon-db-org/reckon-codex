@@ -2,7 +2,7 @@
 
 **No Nonsense Event Sourcing.**
 
-The opinionated book that ships with the [reckon](https://codeberg.org/reckon-db-org) stack: *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*, *reckon-go*.
+The opinionated book that ships with the [reckon](https://codeberg.org/reckon-db-org) stack: *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*, *reckon-go*, *reckon-dotnet*.
 
 ## Reading
 
@@ -28,6 +28,7 @@ Scaffolding stage. Chapter 2 (the D5 model) is the gold-standard reference for t
 | II | 11. Worked example: a lending library | ✅ first cut |
 | III | 12. Antipatterns | ✅ first cut |
 | III | 13. Glossary | ✅ first cut |
+| Appendix | Reckon and the Critter Stack | ✅ first cut |
 | Back | Colophon | ✅ drafted |
 
 ## Building locally
@@ -78,3 +79,4 @@ See [`LICENSE`](LICENSE) for the top-level summary.
 - [reckon-gateway](https://codeberg.org/reckon-db-org/reckon-gateway) — the gRPC ingress
 - [reckon-proto](https://codeberg.org/reckon-db-org/reckon-proto) — the canonical wire contract
 - [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) — idiomatic Go client
+- [reckon-dotnet](https://codeberg.org/reckon-db-org/reckon-dotnet) — idiomatic .NET client
