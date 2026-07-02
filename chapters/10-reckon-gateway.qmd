@@ -185,6 +185,8 @@ case committed != nil:
 
 Three-value returns from one call are unusual in Go but the alternatives (a struct with two pointers, a sentinel error type) all force the caller into worse switch statements. The three-value shape makes the three cases explicit and impossible to forget.
 
+The .NET SDK (*reckon-dotnet*) wraps the same primitive as `client.Dcb("orders").AppendAsync(filter, seqCutoff, events)`, returning a `DcbAppendResult` whose `Committed` and `Conflict` are nullable records. The idiomatic shape differs from Go (a result object rather than a three-value return, a `Conflict` that is control flow rather than an exception), but the read-decide-append loop is the same one, because both regenerate from the same `reckon-proto` contract.
+
 ## TagFilter as recursive oneof
 
 The TagFilter (defined in @sec-dossiers as the Decision's consistency context) is a recursive predicate over an event's tag set. Encoding it in Protocol Buffers takes some care because the oneof construct does not naturally support recursion. The proto definition:
@@ -240,6 +242,8 @@ A few items deserve mention even in a Codex chapter:
 
 ## What this enables
 
-The gateway and the proto contract together extend the stack's reach beyond the BEAM. A Go service can write to a Loan Dossier via `StreamService.AppendEvents`; a Python analytics script can subscribe to events via `SubscriptionService.StreamEventsForward`; a Rust microservice can issue Decisions via `DcbService.AppendIfNoTagMatches`. The polyglot frontier closes; the same patterns of Part I (Dossiers, Decisions, Pizza Architecture, screaming names) apply in any language with a gRPC stub generator.
+The gateway and the proto contract together extend the stack's reach beyond the BEAM. A Go service can write to a Loan Dossier via `StreamService.AppendEvents`; a .NET worker can drive a read model from a subscription via *reckon-dotnet*; a Python analytics script can subscribe to events via `SubscriptionService.StreamEventsForward`; a Rust microservice can issue Decisions via `DcbService.AppendIfNoTagMatches`. The polyglot frontier closes; the same patterns of Part I (Dossiers, Decisions, Pizza Architecture, screaming names) apply in any language with a gRPC stub generator.
+
+Two SDKs ship today against this contract: *reckon-go* (Go) and *reckon-dotnet* (.NET); both regenerate from the same `proto/` directory, so the wire contract stays the single source of truth no matter how many languages join.
 
 What remains is to see it all in motion. The next chapter walks a complete worked example; a lending library, built across two Divisions, using every load-bearing pattern from Parts I and II. @sec-library is where the book stops describing and starts demonstrating.
