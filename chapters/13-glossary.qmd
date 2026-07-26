@@ -128,7 +128,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The cross-*Division* coordinator. Subscribes to *integration facts* from a source Division, dispatches commands into a target Division. Lives in the target Division's CMD as a *sibling slice* with the naming convention `on_{source_event}_{verb}_{target}`. A *saga* in the Garcia-Molina sense, renamed for structural clarity. See @sec-pipelines.
 
 **Projection**
-:   A subscriber to events that materialises a read-model. Lives in *PRJ* (typically fused into *QRY*). Implemented as the `evoq_projection` behaviour; receives events wrapped in an `evoq_envelope`; returns intent (`{insert, table, row}`) rather than performing database writes directly. See @sec-evoq.
+:   A subscriber to events that materialises a read-model. Lives in *PRJ* (typically fused into *QRY*). Implemented as the `evoq_projection` behaviour (`interested_in/0`, `init/1`, `project/4`); receives the event and its metadata as separate arguments and mutates a read model through the `evoq_read_model` interface (`put` / `get` / `delete`), whose implementation (SQLite, ETS, other) is pluggable. See @sec-evoq.
 
 **QRY**
 :   The query-side *Department*. Serves reads from read-models built by *PRJ*. Holds the read handlers; usually also holds the projection code (PRJ fused into QRY). See @sec-pizza.
@@ -137,7 +137,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   The Raft consensus library underlying *Khepri* and therefore *reckon-db*. An Erlang implementation of the Raft protocol [@ongaro2014raft] developed by the RabbitMQ team. See @sec-reckon-db.
 
 **Reckon Cycle**
-:   The ten-stage software-development lifecycle: Inception, Discovery, Architecture, Planning, Generation, Testing, Deployment, Monitoring, Rescue, Orchestration. A wheel, not a pipeline; back-arrows are normal. Each stage is itself a *Dossier*; the architecture applies recursively to itself. See @sec-cycle.
+:   The Codex's name for a Division's two-process Application Lifecycle: *Planning* and *Crafting*, each a long-lived *Dossier* with the initiate / open / shelve / resume / conclude / archive lifecycle. A wheel, not a pipeline; the work turns back when late discovery invalidates the plan. The Domain charter (setup, division discovery) and continuous operations (monitoring, rescue) are separate scopes, not lifecycle phases. The architecture applies recursively to itself. See @sec-cycle.
 
 **reckon-db**
 :   The event store at the centre of every *Pizza*. Built on *Khepri* and *Ra*. Provides the two consistency primitives (*stream-version*, *DCB*), the subscription mechanism, snapshots, and the cluster shape. See @sec-reckon-db.
@@ -203,7 +203,7 @@ Definitions for the load-bearing vocabulary of this book. Terms in italics withi
 :   See *Slice*.
 
 **Walking skeleton**
-:   Alistair Cockburn's term for an end-to-end thin slice deployed on day one of a project; every stage of the *Reckon Cycle* exercised at minimal scope. Adopted by the Codex as the discipline for starting any new Division. See @sec-cycle.
+:   Alistair Cockburn's term for an end-to-end thin slice deployed on day one of a project; a path through the whole stack at minimal scope, the first thing *Crafting* delivers. Adopted by the Codex as the discipline for starting any new Division. See @sec-cycle.
 
 **Wheel**
 :   The Codex's mental image for the *Reckon Cycle*; a cycle with back-arrows, turned as many times as the work demands. Contrasts with the pipeline mental image. See @sec-cycle.

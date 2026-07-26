@@ -38,7 +38,7 @@ The second cut is vertical. Take the concentric rings and slice them top-to-bott
 
 Now you navigate differently. To find "issue a loan" you open `issue_loan/`. Inside: the command record, the event record, the validation logic, the supervisor wiring, the projection that this slice writes; every layer of the capability, all in one place. The horizontal organisation is still present (each artifact knows which ring it belongs to) but the *physical* organisation is vertical. You read by slice. You change by slice. You review by slice.
 
-The classical inverted family did not articulate this cut. Greg Young's talks in the late 2010s started calling it *vertical slice architecture*. The Codex adopts the name and extends it: the inversion remains (dependencies point inward); the slicing is added on top. Onion plus slicing.
+The classical inverted family did not articulate this cut. Jimmy Bogard popularised the name *vertical slice architecture* in the late 2010s. The Codex adopts the name and extends it: the inversion remains (dependencies point inward); the slicing is added on top. Onion plus slicing.
 
 ## A pizza
 
@@ -63,7 +63,7 @@ A slice is a folder, and the folder contains every artifact for one capability.
 Concrete: the lending library has a Desk called *issue_loan*. The Desk's slice lives in the Lending Division's CMD Department, at:
 
 ```
-apps/cmd_lending/src/issue_loan/
+apps/manage_loans/src/issue_loan/
 ├── issue_loan_v1.erl              # the command (record + constructor)
 ├── loan_issued_v1.erl             # the event (record + helpers)
 ├── maybe_issue_loan.erl           # the validation (decide if the slip
@@ -88,7 +88,7 @@ That is the entire CMD-side slice for *issue_loan*. Five files, ~200 lines of Er
 The QRY side has its own slice. The *get_loan_by_id* Desk lives at:
 
 ```
-apps/qry_lending/src/get_loan_by_id/
+apps/query_loans/src/get_loan_by_id/
 ├── get_loan_by_id.erl             # the read handler
 ├── loan_issued_to_loans.erl       # projection: writes the loans table
 ├── loan_returned_to_loans.erl     # also writes the loans table
@@ -161,7 +161,7 @@ It will. Deliberately. Each folder is one capability. If the system has many cap
 
 > *I cannot see all the projections at a glance.*
 
-You can: list the projection files. `find apps/qry_lending/src -name '*_to_*.erl'`. The naming convention is `{event}_to_{table}.erl`, and the convention makes them greppable. Tooling, not visual layout, gives the global view.
+You can: list the projection files. `find apps/query_loans/src -name '*_to_*.erl'`. The naming convention is `{event}_to_{table}.erl`, and the convention makes them greppable. Tooling, not visual layout, gives the global view.
 
 > *This is just Clean Architecture with extra steps.*
 

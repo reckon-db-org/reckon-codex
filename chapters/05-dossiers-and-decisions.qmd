@@ -72,7 +72,7 @@ The check inside `execute/2` (the command handler) uses that state. *Does the Bo
 
 ## A worked Dossier; issuing a loan
 
-The Lending Division's *issue_loan* Desk lives at `apps/cmd_lending/src/issue_loan/`. The slice contains the command, the event, the handler. The aggregate that hosts the handler is the *Loan* Dossier, defined at `apps/cmd_lending/src/loan_aggregate.erl`.
+The Lending Division's *issue_loan* Desk lives at `apps/manage_loans/src/issue_loan/`. The slice contains the command, the event, the handler. The aggregate that hosts the handler is the *Loan* Dossier, defined at `apps/manage_loans/src/loan_aggregate.erl`.
 
 Sketching the handler:
 
@@ -126,7 +126,7 @@ The tag filter is the consistency unit. It can be a flat list (*any of these tag
 
 The library's Catalogue Division offers a *reserve_isbn* capability. A Borrower can place a hold on an ISBN before the book itself is available. The invariant: *only one reservation may be open per ISBN at any time*. (Library policy; one hold per ISBN keeps the queue simple.) The invariant spans the whole reservation population, not any single Borrower or Book.
 
-The slice at `apps/cmd_catalogue/src/reserve_isbn/` implements a Decision:
+The slice at `apps/manage_books/src/reserve_isbn/` implements a Decision:
 
 ```erlang
 -module(reserve_isbn).

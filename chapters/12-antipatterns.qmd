@@ -50,7 +50,7 @@ apply(#loan_issued_v1{borrower_id = BId} = E, State) ->
 
 **What breaks.** The read-model conflates *infrastructure metadata* (used for ordering, idempotency, debugging) with *business state* (the things queries are actually about). Refactoring the read-model becomes harder because removing an envelope field looks like a business-data migration. Replays produce different envelope values than the originals (event_ids are re-issued on replay), changing read-model contents without changing the business meaning.
 
-**Fix.** Projections receive an `evoq_envelope` containing both the envelope and the event; they consume the *event* for business data and the *envelope* for infrastructure concerns (idempotency keys, ordering). Read-models hold only business data unless infrastructure metadata is genuinely user-facing.
+**Fix.** Projections receive the event and its metadata as separate arguments; they read business data from the event's `data` and infrastructure concerns (idempotency keys, ordering) from the event's framing fields (`event_id`, `stream_id`, `version`) and metadata. Read-models hold only business data unless infrastructure metadata is genuinely user-facing.
 
 ### Manual event emission outside the aggregate
 
@@ -118,7 +118,7 @@ reckon_db_streams:append(Store, StreamId, ExpectedVersion, [
 **Pattern.** A Desk folder contains its own process manager sub-folder, treating the PM as a child of the Desk that triggers it.
 
 ```
-apps/cmd_lending/src/issue_loan/
+apps/manage_loans/src/issue_loan/
 ├── issue_loan_v1.erl
 ├── ...
 └── on_book_loanable/                  %% the wrong place for a PM

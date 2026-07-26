@@ -40,30 +40,30 @@ This is the cardinal sin of event-sourced architectures: reading from read-model
 
 A command pipeline pre-loads everything the Dossier needs *before* the Dossier sees the command, attaches the result to the command (typically in a metadata map), and hands the Dossier a self-contained decision input.
 
-The pipeline runs *outside* the aggregate process, *at the slice boundary*, in dedicated code that is allowed to read from anywhere. The Dossier's `execute/2` callback receives the enriched command. The `decide` step inside `execute/2` consults the command's metadata, not the live read-model. The Dossier remains pure; the read happens once, at write time, and is *captured in the resulting event*; anyone replaying the event sees not just the action but the *cross-entity facts that justified it*.
+The pipeline runs *outside* the aggregate process, *at the slice boundary*, in dedicated code that is allowed to read from anywhere. The Dossier's `execute/2` callback receives the enriched command. The `decide` step inside `execute/2` consults the enriched command, not the live read-model. The Dossier remains pure; the read happens once, at write time, and is *captured in the resulting event*; anyone replaying the event sees not just the action but the *cross-entity facts that justified it*.
+
+A pipeline step is a plain module with a fixed shape: a `name/0` and an `apply/2` that transforms the command and context and returns one of four results, `{ok, Cmd, Ctx}` (proceed, possibly enriched), `{skip, Ctx}` (observe only), `{halt, Result}` (succeed early, the idempotency case), or `{error, Reason}` (stop). The enriched fields the aggregate will decide on go on the *command*; provenance (the read's timestamp, its source) goes in a reserved `'__meta'` map that the runner serialises into the event's metadata.
 
 ```erlang
-%% In load_borrower_open_loans.erl -- a pipeline step
+%% load_borrower_open_loans.erl -- a pipeline step (a plain module)
 -module(load_borrower_open_loans).
--behaviour(evoq_pipeline_step).
 
--export([run/2]).
+-export([name/0, apply/2]).
 
-run(#{command := #issue_loan_v1{borrower_id = BorrowerId} = Cmd,
-      metadata := Meta} = Ctx, _Opts) ->
-    %% Reading from a read-model is FINE here -- pipelines run
-    %% outside the aggregate; they're not part of event flow.
-    {ok, Count} = qry_lending:count_open_loans_for_borrower(BorrowerId),
-    Ctx#{
-        command  := Cmd,
-        metadata := Meta#{
-            borrower_open_loan_count => Count,
-            borrower_loan_count_at   => erlang:system_time(millisecond)
-        }
-    }.
+name() -> load_borrower_open_loans.
+
+%% Reading from a read-model is FINE here -- steps run outside the
+%% aggregate, before event flow, never during replay.
+apply(#{borrower_id := BorrowerId} = Cmd, Ctx) ->
+    {ok, Count} = query_loans:count_open_loans_for_borrower(BorrowerId),
+    Meta = maps:get('__meta', Ctx, #{}),
+    Ctx1 = Ctx#{'__meta' => Meta#{borrower_loan_count_at =>
+                                      erlang:system_time(millisecond)}},
+    %% the count is data the aggregate decides on, so it enriches the command:
+    {ok, Cmd#{borrower_open_loan_count => Count}, Ctx1}.
 ```
 
-The pipeline step is a named function. It is testable in isolation. It declares its dependencies (a query against the Lending QRY app). It produces a richer command for downstream steps.
+The pipeline step is a named module. It is testable in isolation. It declares its dependencies (a query against the Lending QRY app). It produces a richer command for downstream steps.
 
 The pipeline composes:
 
@@ -81,11 +81,11 @@ assert_borrower_is_active        (cross-entity read)
    │
    ▼
 [ Loan aggregate's execute/2 sees enriched command,
-  reads borrower_open_loan_count from command.metadata,
+  reads borrower_open_loan_count from the command,
   emits loan_issued_v1 with those facts captured ]
 ```
 
-Each step has one job. Each step's name screams what it loads. A reviewer of the slice can read the pipeline's `init/0` function and know exactly which cross-entity facts the command depends on; they are listed, in order, as pipeline steps.
+Each step has one job. Each step's name screams what it loads. A reviewer of the slice can read the pipeline's `steps/0` function and know exactly which cross-entity facts the command depends on; they are listed, in order, as pipeline steps.
 
 The resulting event carries the cross-entity facts forward:
 
@@ -108,7 +108,7 @@ A future replay of the Dossier sees these fields in the event and uses them to r
 A pipeline is a slice's collaborator. It lives in the slice that uses it, not in a `pipelines/` folder. The *issue_loan* slice has its own pipeline; the *renew_loan* slice has its own; they may share step modules (loaded from a shared library), but the assembly is local to the slice.
 
 ```
-apps/cmd_lending/src/issue_loan/
+apps/manage_loans/src/issue_loan/
 ├── issue_loan_v1.erl
 ├── loan_issued_v1.erl
 ├── maybe_issue_loan.erl
@@ -123,14 +123,14 @@ The pipeline's assembly is one function:
 -export([steps/0]).
 
 steps() ->
-    [
-        {load_borrower_open_loans,    #{}},
-        {load_book_loanable_status,   #{}},
-        {assert_borrower_is_active,   #{}}
-    ].
+    [load_borrower_open_loans,
+     load_book_loanable_status,
+     assert_borrower_is_active].
 ```
 
 That's the whole module. The integration contract between *issue_loan* and the rest of the world lives in this file, in evaluation order. Reviewers see at a glance what external data the command depends on. Adding a new dependency means adding a step; removing one means deleting a step; no hidden coupling.
+
+The runner is small and, today, hand-rolled: the slice's handler folds the command through `steps/0` (each step's `apply/2` in turn, halting on `{halt, _}` or `{error, _}`) and dispatches the enriched command to the aggregate. A framework-level `evoq_pipeline:run/3` that runs the same fold, with telemetry spans per step, is a proposed addition to evoq; adopting it later changes the call site, not the steps.
 
 ::: {.callout-note}
 ## Counterclaim and response
@@ -164,49 +164,43 @@ The PM is itself a slice. It has a folder name that screams what it does. It liv
 The integration: when Catalogue registers a book, Lending should start tracking it as loanable. The PM that handles this lives in Lending's CMD app, in a slice named after what it does:
 
 ```
-apps/cmd_lending/src/on_book_registered_track_loanable/
-├── on_book_registered_track_loanable.erl       ← the PM gen_server
-├── on_book_registered_track_loanable_sup.erl   ← supervisor for this slice
-└── README.md                                    ← optional notes
+apps/manage_loans/src/on_book_loanable_track_book/
+├── on_book_loanable_track_book.erl       ← the listener
+├── on_book_loanable_track_book_sup.erl   ← supervisor for this slice
+└── README.md                              ← optional notes
 ```
 
-The PM module subscribes to Catalogue's events (via the integration transport, see below) and dispatches a local command:
+In evoq, a slice that consumes an integration fact and dispatches a command is an `evoq_listener`: it declares the fact it listens for, the transport, and a `handle_fact/3` that does the translation. (When the coordination spans multiple steps and aggregates, with compensation, the heavier `evoq_process_manager` behaviour applies; this 1:1 relay is a listener.)
 
 ```erlang
--module(on_book_registered_track_loanable).
--behaviour(evoq_process_manager).
+-module(on_book_loanable_track_book).
+-behaviour(evoq_listener).
 
--export([init/1, handle_fact/2]).
+-export([source_fact/0, transport/0, handle_fact/3]).
 
-init([]) ->
-    %% Subscribe to the integration fact from Catalogue. The exact
-    %% subscription mechanics depend on the transport (Chapter 6's
-    %% integration section); the contract is: this PM receives
-    %% `book_registered_v1' facts as they're published.
-    Topic = <<"catalogue.book_registered_v1">>,
-    integration:subscribe(Topic, self()).
+%% Which integration fact this slice listens for, and over which transport.
+source_fact() -> <<"catalogue.book_loanable_v1">>.
+transport()   -> mesh.
 
-handle_fact(#book_registered_v1{
-    isbn      = Isbn,
-    title     = Title,
-    book_id   = BookId
-}, State) ->
-    %% Translate the source fact into a target command.
-    Cmd = #track_loanable_book_v1{
-        book_id = BookId,
-        isbn    = Isbn,
-        title   = Title,
-        added_at = erlang:system_time(millisecond)
+%% Translate the source fact into a target command and dispatch it.
+handle_fact(<<"catalogue.book_loanable_v1">>, Payload, _Metadata) ->
+    #{book_id := BookId, isbn := Isbn, title := Title} = Payload,
+    Cmd = #{
+        command_type => <<"track_loanable_book_v1">>,
+        book_id      => BookId,
+        isbn         => Isbn,
+        title        => Title,
+        added_at     => erlang:system_time(millisecond)
     },
-    case cmd_lending:dispatch(Cmd) of
-        {ok, _Events}     -> {ok, State};
-        {error, Reason}   -> {error, Reason, State}    %% triggers retry/DLQ
+    case manage_loans:dispatch(Cmd) of
+        {ok, _Events}   -> ok;
+        {error, Reason} -> {error, Reason}    %% runtime retries, then dead-letters
     end.
 ```
 
 A few details worth pulling out.
 
-**The PM is itself a slice.** Folder name (`on_book_registered_track_loanable`) screams what it does. The naming convention is `on_{source_event}_{verb}_{target}`; a developer browsing Lending's CMD app sees the folder, reads the name, and knows: *this is where Lending reacts to Catalogue's book_registered facts*. Discoverability is at the filesystem level. No "integrations" subdirectory, no central event-routing table, no decoder ring. The integration is where the integration's name says it is.
+**The PM is itself a slice.** Folder name (`on_book_loanable_track_book`) screams what it does. The naming convention is `on_{source_fact}_{verb}_{target}`; a developer browsing Lending's CMD app sees the folder, reads the name, and knows: *this is where Lending reacts to Catalogue's book_loanable facts*. Discoverability is at the filesystem level. No "integrations" subdirectory, no central event-routing table, no decoder ring. The integration is where the integration's name says it is.
 
 **The PM lives in the target Division.** This is a deliberate choice that deserves justification. The PM needs to know how to build the target command (`track_loanable_book_v1`); it needs access to the target's command-dispatch surface; its failures concern the target. Locating it in the target Division gives it the dependencies it needs without exposing them to the source. The source Division (Catalogue) publishes a fact; it does not know or care who consumes that fact. New consumers can be added (a reporting Division, an analytics Division) without Catalogue changing.
 
@@ -244,7 +238,7 @@ For commands that retry safely (idempotent ones) the PM retries. The mesh's at-l
 
 For commands that fail unrecoverably (a domain error, a missing prerequisite, a fundamental incompatibility) the PM has two options. It can give up, log, and emit a *compensation event* in its own Division ("we tried to track this book and we couldn't"). It can also attempt to compensate upstream by issuing a counter-command back to the source Division, if the integration agreement allows. Both options are slice-level decisions. The PM owns the failure model; the Division supervisor owns escalation; the Codex does not prescribe one universal answer.
 
-What the Codex *does* prescribe: the failure pathway is named. A PM has a `handle_fact_failure/3` callback or equivalent; when commands fail, that callback runs; whatever it does (emit a compensation event, drop, retry) is *visible code in the slice*. Hidden failure handling is forbidden. A PM that silently drops failures is broken; a PM that explicitly logs and continues is fine; a PM that issues compensation events is fine. The discipline is not which strategy, but that the strategy is in the code, not in folklore.
+What the Codex *does* prescribe: the failure pathway is visible. A listener that cannot complete returns `{error, Reason}`; the runtime retries with backoff and dead-letters after the budget is spent. Compensation, when the integration agreement calls for it, is an explicit command or event the slice emits; whatever it does is *visible code in the slice*. Hidden failure handling is forbidden. A listener that silently drops failures is broken; one that explicitly logs and continues is fine; one that issues compensation is fine. The discipline is not which strategy, but that the strategy is in the code, not in folklore.
 
 ## What this enables
 
@@ -257,4 +251,4 @@ With Dossiers, Decisions, pipelines, and process managers, the architecture cove
 
 Read sides are decoupled from write sides through subscriptions and the QRY/PRJ Departments (@sec-pizza). Replay determinism is preserved because no read happens inside event flow. Audit trails are complete because cross-entity facts captured at decision time are recorded in the events themselves.
 
-The remaining piece is *time*. So far the architecture has been described as if it lived in an eternal present; Divisions process commands, Dossiers append events, PMs translate. Real systems have phases: inception, design, planning, generation, testing, deployment, monitoring, rescue. Real systems also have *cycles*; Rescue at month six reveals an architectural flaw that sends the work back to Design. The next chapter (@sec-cycle) names the ten stages of this cycle, treats each one as a long-lived process with its own Dossier shape, and shows how the architectural commitments of Part I scale up to organise *building software* itself, not just the software being built.
+The remaining piece is *time*. So far the architecture has been described as if it lived in an eternal present; Divisions process commands, Dossiers append events, listeners translate. Real systems are also *built*, and the building is itself a process: a Division is planned, then crafted, and the work turns back when late discovery invalidates the plan. The next chapter (@sec-cycle) names this the Reckon Cycle, treats each process as a long-lived Dossier with its own lifecycle, and shows how the architectural commitments of Part I scale up to organise *building software* itself, not just the software being built.

@@ -1,0 +1,122 @@
+# Reckon and the Critter Stack {#sec-critter}
+
+Most readers who arrive at the Reckon stack from the .NET world arrive by way of **Marten**, and by extension the **Critter Stack** (Marten together with its sister project **Wolverine**). Marten advertises itself as "a transactional document DB and ACID-compliant event store with user-defined projections," which overlaps enough with Reckon's remit that the comparison is worth drawing carefully. This appendix does that. It is not a takedown: Marten is excellent, well documented, and deserving of its popularity. The point is to locate precisely *where* the two stacks are the same, where they differ, and what a team can and cannot do if it wants Reckon's event store underneath a .NET application.
+
+The frame we use throughout is that a complete event-sourcing stack has **three parts**:
+
+1. **Storage** — the durable, append-only log of events.
+2. **Event brokerage** — the delivery of those events to interested consumers, asynchronously, after they are stored.
+3. **Framework** — the developer-facing paradigm: aggregates, commands, projections, process managers, consistency boundaries.
+
+Holding those three parts apart is the whole exercise. Marten's popularity comes in large part from *collapsing* them; Reckon's design comes from keeping them *separate*. Neither choice is wrong. They serve different populations.
+
+## What Marten actually is
+
+Marten is **one .NET library on top of PostgreSQL**. From a single dependency it gives a team two capabilities:
+
+- a **document database** (arbitrary objects stored as JSONB, queried with LINQ, under ACID transactions), and
+- an **event store** with **user-defined projections** (inline, live, or asynchronous).
+
+Everything below the library (durability, high availability, backup, replication, clustering) is **delegated to PostgreSQL**. Marten is an in-process library, not a server. The asynchronous machinery is the **async daemon**: a background subsystem inside the host application that *polls* the event tables and drives projections and subscriptions. There is no process that "is" Marten; there is the application plus a Postgres box.
+
+Marten does not stand alone in its own marketing. Its sister project **Wolverine** (same author, same company, jointly the "Critter Stack") is the mediator, messaging, transactional-outbox and saga framework. The division of labour is clean and worth memorising: **Marten stores; Wolverine moves.** Almost every question about "does Marten have X" resolves to "Marten does the storage part, Wolverine does the messaging part."
+
+## Why Marten has traction
+
+Marten's adoption is not principally a story about event-store sophistication. It is a story about removing friction at every point a .NET team feels it:
+
+| Appeal | Why it lands |
+|---|---|
+| **One dependency the team already runs** | PostgreSQL. No new server, no broker, no consensus system to operate. Existing ops knowledge transfers directly. |
+| **Incremental adoption** | A team can arrive as "just a document database" to escape ORM pain, then add events later in the *same* store, in the *same* transaction. No big-bang commitment. |
+| **Idiomatic .NET** | Strong types, LINQ over documents, `IServiceCollection` integration, `dotnet add package Marten` against a connection string. |
+| **ACID across documents *and* events** | Append events and update read models in one Postgres transaction (inline projections). Strong consistency with no distributed-systems reasoning required. |
+| **Commercial support** | JasperFx sells support and consulting. Enterprises need an accountable vendor; this alone unlocks adoption pure OSS never reaches. |
+| **The whole vertical exists** | Marten + Wolverine is document DB + event store + projections + messaging + sagas + outbox from one team with one mental model. |
+| **Documentation and community** | First-class docs, active community, a healthy blog ecosystem evangelising it. |
+
+The one-sentence version: **Marten makes event sourcing look like "just another Postgres table," and defers the genuinely distributed parts to infrastructure the team already trusts.** That is a powerful and honest value proposition. It is also the exact hinge on which the rest of this appendix turns.
+
+## The three parts, side by side
+
+| Part | Marten / Critter Stack | Reckon stack |
+|---|---|---|
+| **Storage** | Event tables in **PostgreSQL**. Single logical writer; HA via Postgres replication. | **reckon-db** — BEAM-native, **Khepri/Ra with Raft consensus**, partitioned writers, clustered, edge-capable, tamper-evident (see @sec-reckon-db). |
+| **Shared types / wire** | Internal to Marten. | **reckon-gater** (shared records, gateway API) + **reckon-proto** (gRPC contract) + **reckon-gateway** (gRPC + REST ingress) (see @sec-gateway). |
+| **Event brokerage** | **Async daemon** (polls Postgres) + `ISubscription` for in-process background work. Cross-process delivery requires **Wolverine + a broker** (RabbitMQ / Kafka / Azure Service Bus). | **Native persistent subscriptions** (stream / event-type / pattern / payload), **push not poll**, plus emitter pools, plus free in-cluster BEAM message passing, plus the mesh for cross-context integration facts. |
+| **Framework** | Marten projections + **Wolverine** for commands, handlers, sagas, outbox. | **evoq** — aggregates, handlers, process managers, projections, DCB decisions, CCC, lineage; store-agnostic, bound to reckon-db by **reckon-evoq** (see @sec-evoq). |
+| **Polyglot clients** | .NET only; Marten *is* a .NET library. | Any language that speaks gRPC to reckon-gateway (Go, Python, .NET, Rust). |
+
+Two structural facts fall out of the table.
+
+First, **Marten collapses storage, brokerage, and framework onto a single Postgres**, and then bolts real brokerage on as a *second product* (Wolverine). Reckon keeps the three physically separate. Marten's arrangement is simpler to operate for one application; Reckon's is more decomposed, at the cost of more moving parts and a BEAM footprint.
+
+Second, and more deeply: **the brokerage difference is not incidental, it is the runtime.** Postgres is a database; the BEAM is a distribution runtime. That single fact drives the next section.
+
+## Does Marten have an async event bus?
+
+The precise answer is: **Marten has async projections and subscriptions, not an event bus. For a genuine cross-service bus, the .NET idiom is to add Wolverine and a broker.**
+
+Inside a single application, Marten's async daemon plus `ISubscription` genuinely delivers "react to events asynchronously, on a background thread, with checkpointing and dead-letter handling." That covers async read-model builds and background processing, and it roughly matches **vanilla reckon-db persistent subscriptions**. At the single-process level, *neither stack needs RabbitMQ.*
+
+The mechanism differs, and the difference matters. Marten subscriptions **poll Postgres** — the async daemon tails the event tables. reckon-db subscriptions are **pushed** from a distributed store, and because they run on the BEAM, delivery to consumers on *other nodes of the cluster* is free (Erlang distribution). Marten has no comparable free distribution substrate.
+
+To leave the process — to publish integration facts to other services or bounded contexts — Marten does **not** do it itself. A team either writes a subscription that pushes to Kafka or RabbitMQ by hand (the Marten docs ship exactly such a `KafkaSubscription` sample), or adopts **Wolverine**, which supplies the transactional outbox and the broker transports and makes outbound integration first-class. Marten's `IChangeListener` hook exists precisely to enable Wolverine's outbox. So in practice, **a .NET team building cross-service integration introduces a broker**, usually via Wolverine, with RabbitMQ or Kafka as the transport.
+
+Reckon answers the same requirement with **process managers plus the mesh**, not with a broker product: domain events stay in reckon-db, and a process manager decides which integration facts to publish outward. Same architectural pattern as Wolverine's outbox (react to a stored event, publish outward), different substrate (BEAM and QUIC mesh versus RabbitMQ and Kafka).
+
+The honest framing: *both* stacks separate internal domain events from outbound integration facts. Marten leans on external brokers for the outbound half; Reckon leans on the BEAM and the mesh. Vanilla reckon-db is "more of a bus out of the box" **because the BEAM is a distribution runtime and Postgres is not.** That is the single largest architectural distinction between the two worlds.
+
+## On porting the framework to .NET
+
+A natural question is whether evoq — the framework part — could be ported to .NET. The concepts port; the implementation should not. evoq's patterns (aggregates, projections, process managers, DCB decisions, CCC, lineage) are runtime-agnostic. Its *implementation* leans hard on BEAM primitives with no native .NET equivalent: a supervised process per live aggregate with TTL and passivation, OTP supervision trees for the handler and projection runtime, hot code loading. Reproducing that idiomatically in .NET means reaching for Orleans (virtual actors, the closest fit), Akka.NET, or Proto.Actor — a reimplementation of the patterns on an actor framework, not a port of the code. And the niche is already occupied: the modern .NET answer to "what evoq does" is Marten (store and projections) plus Wolverine (commands, sagas, outbox).
+
+**Decision (recorded here for the stack's own memory): we are not pursuing an evoq-style framework in .NET.** Trying to out-Wolverine Wolverine on its home turf is a poor use of effort. The framework layer stays where it belongs — on the BEAM.
+
+**What we *will* build is a .NET gRPC SDK generated from reckon-proto.** This is the high-leverage, low-cost move. reckon-proto is already the single source of truth for the wire contract (@sec-gateway); a .NET client is a `buf.gen.yaml` target plus an idiomatic hand-written façade over the generated stubs, exactly as reckon-go is. That gives every .NET team typed access to the full event-store surface — append with optimistic concurrency, DCB conditional append, subscriptions, snapshots, temporal reads — **without speaking Erlang and without a framework port.** The framework can stay Wolverine or Marten; the *store* underneath becomes reckon-db.
+
+Which raises the real question a Critter-Stack team asks next.
+
+## Replacing PostgreSQL with reckon-db in the Critter Stack
+
+The instinct is to phrase it as a swap: pull Postgres out from under Marten, slot reckon-db in. That instinct is wrong, and understanding *why* is more instructive than any recipe.
+
+### Postgres is doing five jobs, not one
+
+Under the Critter Stack, Postgres is simultaneously:
+
+1. the **event store** (append-only streams);
+2. the **document database** (mutable JSONB documents);
+3. the **read-model store** (projections are documents or tables in the same database);
+4. the **transactional coordinator** — the unit of work that lets a single `SaveChangesAsync()` append events, update inline projections, and store documents in *one ACID transaction*, plus Wolverine's transactional outbox in that same transaction; and
+5. the **query engine** — LINQ compiled to SQL and JSONB queries.
+
+reckon-db does exactly **one** of these: it is an event store, job (1). It is not a document database, not a mutable-row store, not a SQL query engine, and not a cross-table transaction coordinator. So "replace Postgres with reckon-db" is not a swap; it removes one pillar and leaves four holes.
+
+### Marten cannot have its store replaced
+
+Marten has no `IEventStore` seam that a different backend could implement. Its design premise *is* Postgres: SQL generation, JSONB, PL/pgSQL functions such as the quick-append event function, LINQ-to-SQL translation, all the way down. Marten's abstraction is not "an event store interface with a Postgres implementation"; it is a Postgres-specific engine end to end. You cannot substitute reckon-db underneath Marten without forking Marten into something unrecognisable. That path is closed.
+
+### The physics: you cannot keep the central promise and gain distribution
+
+Marten's signature capability — events and read models committed in one ACID transaction (inline projections) — is *exactly* what makes Postgres non-removable. That guarantee exists only because the log and the read model live in the same database, under one transaction manager. The moment the event log moves to a distributed system (reckon-db, Raft-replicated across nodes) and the read model lives somewhere else, a single ACID transaction spanning both is no longer available. This is not a limitation of Marten or of reckon-db; it is CAP and it is physics. You cannot have both a Raft-replicated distributed log *and* a single-node ACID transaction that atomically spans the log and the read model.
+
+So "replace Postgres with reckon-db in the Critter Stack" really means: **trade Marten's central promise for distribution.** That is a legitimate trade for a team that needs distribution (edge, multi-region, federation, Raft durability, tamper-evidence, push-based fan-out). It is a *bad* trade for a team that does not — such a team should simply keep Marten and Postgres. Naming the trade honestly is more useful than pretending it is a swap.
+
+### The buildable architecture: re-separate what Marten fused
+
+The productive move is not replacement but **decomposition**. Marten fuses the write log and the read models into one Postgres; the CQRS-honest arrangement re-separates them and lets each tool do what it is best at:
+
+- **reckon-db takes the event-log role.** All writes — append with optimistic concurrency, DCB conditional append for cross-stream invariants — go to reckon-db through the new .NET gRPC SDK. This is where the distribution, the Raft durability, the edge capability and the tamper-evidence live.
+- **A document or relational store keeps the read-model role.** This can remain Postgres, driven by **Marten used purely as a document database** (which it is genuinely excellent at), or SQLite in the small. Marten's `IDocumentSession` becomes a read-model writer, not an event store.
+- **reckon-db subscriptions drive the projections.** A plain .NET `BackgroundService` subscribes to reckon-db over the SDK and applies each event to the read model through Marten's document API, checkpointing its position (in a reckon-db snapshot or in the read database). This replaces Marten's own async daemon: reckon-db owns the log and the delivery; Marten owns the query-optimised read side.
+- **Wolverine, if used, keeps its ergonomics.** Command handlers append to reckon-db via the SDK instead of Marten's `FetchForWriting<T>`; Wolverine's outbox and sagas can stay on Postgres, since that part of the stack is perfectly fine as-is.
+
+The one semantic change a team must accept is the shift from **inline** (synchronous, same-transaction) projections to **asynchronous** (eventually consistent, checkpointed) projections. That shift is not a regression; it is precisely the CQRS boundary that Reckon draws deliberately and Marten deliberately blurs. A team that already reasons in read-your-writes-tolerant terms loses nothing. A team that leaned on inline projections for synchronous consistency is, in effect, giving up the very coupling that tied it to a single Postgres in the first place — which is the whole point of moving.
+
+### Summary of the position
+
+- reckon-db **cannot** be dropped into Marten as a store; Marten is Postgres to the core.
+- reckon-db **can** take over the event-log role in a decomposed .NET architecture, feeding Marten-as-document-store through subscriptions, driven by the .NET gRPC SDK.
+- The unavoidable cost is Marten's single-transaction inline-projection guarantee, surrendered in exchange for distribution. That is a feature of the trade, not a defect of either tool.
+- For a single-application team on one Postgres with no distribution need, the correct recommendation is **stay on the Critter Stack.** Reckon's audience begins where Postgres-plus-a-broker stops: distributed, edge, federated, polyglot, tamper-evident. Sold there, reckon-db is not "Marten but Erlang" — it is the infrastructure the Critter Stack reaches for a broker and a read replica to *approximate*.

@@ -1,6 +1,6 @@
 # Names that Scream {#sec-screaming}
 
-Robert C. Martin coined the phrase *Screaming Architecture* [@martin2017clean] for the principle that a system's structure should announce what the system *does*, not how it is *implemented*. Open the codebase, read the top-level folder names, and the system should be obvious. Open a Division's source tree, read the slice folder names, and the capabilities should be obvious. Open one slice, read the file names, and that slice's responsibilities should be obvious.
+Robert C. Martin named the principle *Screaming Architecture* (in a 2011 essay, later folded into his 2017 book [@martin2017clean]): a system's structure should announce what the system *does*, not how it is *implemented*. Open the codebase, read the top-level folder names, and the system should be obvious. Open a Division's source tree, read the slice folder names, and the capabilities should be obvious. Open one slice, read the file names, and that slice's responsibilities should be obvious.
 
 The principle is simple. The discipline to follow it is not. Most codebases name by mechanism (*controllers*, *services*, *repositories*, *handlers*) because mechanism-naming is what frameworks teach. The result is architecture that mumbles. This chapter is about why business-intent naming is worth the discipline cost, what specifically to do and not do, and how to test whether a codebase passes.
 
@@ -83,7 +83,7 @@ The test for whether names scream: open the project, do not read any code, list 
 The library worked example, applied to this test:
 
 ```
-apps/cmd_lending/src/
+apps/manage_loans/src/
 ├── issue_loan/                                    ← intent obvious
 ├── renew_loan/                                    ← intent obvious
 ├── return_loan/                                   ← intent obvious
@@ -101,7 +101,7 @@ Ten folders. Each folder name announces a capability. The integration point with
 Compare what the same Division might look like with conventional naming:
 
 ```
-apps/cmd_lending/src/
+apps/manage_loans/src/
 ├── controllers/
 │   ├── LoanController.java
 │   └── MembershipController.java

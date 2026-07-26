@@ -2,7 +2,7 @@
 
 reckon-db (@sec-reckon-db) is an event store. It knows how to append, read, subscribe, snapshot, and replicate. It does *not* know what an aggregate is. It does not know how a projection should retry, how a process manager should compensate, how a command should be idempotent. These are framework concerns, and the Codex's stack places them in *evoq*.
 
-evoq is the framework that turns reckon-db's storage primitives into an ergonomic platform for event-sourced systems. Its central design choice is to express every role in the architecture as an Erlang *behaviour*; a compile-time contract that captures what a particular kind of slice must implement and what guarantees the runtime will provide in return. Twenty-one such behaviours together form the surface a Division's code interacts with.
+evoq is the framework that turns reckon-db's storage primitives into an ergonomic platform for event-sourced systems. Its central design choice is to express every role in the architecture as an Erlang *behaviour*; a compile-time contract that captures what a particular kind of slice must implement and what guarantees the runtime will provide in return. Twenty-four such behaviours together form the surface a Division's code interacts with.
 
 This chapter walks the principal behaviours and explains the discipline that the framework's shape enforces.
 
@@ -119,37 +119,39 @@ A projection consumes events and writes a read-model. The `evoq_projection` beha
 -module(loan_issued_to_loans).
 -behaviour(evoq_projection).
 
--export([init/1, project/2, target/0]).
+-export([interested_in/0, init/1, project/4]).
 
-init(_Opts) ->
-    {ok, #{started_at => erlang:system_time(millisecond)}}.
+interested_in() -> [<<"loan_issued_v1">>].
 
-target() -> loans.    %% the read-model id; SQLite table name
+init(_Config) ->
+    {ok, ReadModel} = evoq_read_model:new(evoq_read_model_ets, #{}),
+    {ok, #{started_at => erlang:system_time(millisecond)}, ReadModel}.
 
-project(#evoq_envelope{event = #loan_issued_v1{} = Event}, State) ->
+project(#{event_type := <<"loan_issued_v1">>, data := Data},
+        _Metadata, State, ReadModel) ->
     Row = #{
-        loan_id     => Event#loan_issued_v1.loan_id,
-        borrower_id => Event#loan_issued_v1.borrower_id,
-        book_id     => Event#loan_issued_v1.book_id,
+        borrower_id => maps:get(borrower_id, Data),
+        book_id     => maps:get(book_id, Data),
         status      => <<"open">>,
-        due_date    => Event#loan_issued_v1.due_date,
-        issued_at   => Event#loan_issued_v1.issued_at
+        due_date    => maps:get(due_date, Data),
+        issued_at   => maps:get(issued_at, Data)
     },
-    {ok, [{insert, loans, Row}], State}.
+    {ok, RM2} = evoq_read_model:put({loan, maps:get(loan_id, Data)}, Row, ReadModel),
+    {ok, State, RM2}.
 ```
 
 Two important things to notice.
 
-**The projection receives an `evoq_envelope`, not a raw event.** The envelope wraps the event with metadata the projection needs but should not have to dig out of the event payload; event_id (for idempotency), stream_id, version, position (for ordering), causation_id (for tracing). Reading raw records and reaching into the underlying data structure is *Demon 23* in the antipatterns catalogue (@sec-antipatterns). The envelope makes the discipline structural.
+**The callback receives the event and its metadata as separate arguments.** `project/4` is handed the event (a map carrying `event_type`, `data`, `stream_id`, `version`, and `event_id`), a `Metadata` map, the projection's own `State`, and its `ReadModel`. The framing fields a projection needs for ordering and idempotency (`event_id`, `stream_id`, `version`) live on the event map; the business payload lives under `data`. Reaching past `data` to pull business fields from the wrong place is *Demon 40* in the antipatterns catalogue (@sec-antipatterns). Taking them from the right place is structural.
 
-**The projection returns *intent*, not action.** `{insert, loans, Row}` is a description of what the projection wants to do; the runtime performs the database operation. The separation matters for testing (intent is unit-testable without a real database), for batching (multiple projections targeting the same table can be batched by the runtime), and for backend pluggability (the same projection works against SQLite, PostgreSQL, or in-memory test stores).
+**The projection mutates a read model through an interface, not a database directly.** `evoq_read_model:put/3` (with `get/2` and `delete/2`) is the abstraction; the projection returns the updated `ReadModel` and the runtime persists it. The read-model implementation is pluggable: `evoq_read_model_ets` for tests, a SQLite-backed implementation in production. The separation matters for testing (the projection is unit-testable against an ETS read model with no database) and for backend pluggability (the same projection runs against SQLite, PostgreSQL, or an in-memory store).
 
 The runtime handles:
 
 - **Subscription bootstrap.** On startup, the projection's checkpoint is loaded from the checkpoint store; the runtime resumes from the position immediately after the checkpoint.
-- **Idempotency.** Every event in the envelope carries an event_id; the runtime tracks processed event_ids for each projection (in a small idempotency store) and skips events already handled. At-least-once delivery becomes effectively once-only processing.
+- **Idempotency.** Every event carries an event_id; the runtime tracks processed event_ids for each projection (in a small idempotency store) and skips events already handled. At-least-once delivery becomes effectively once-only processing.
 - **Checkpoint persistence.** After each batch of events is processed, the checkpoint is updated atomically with the database write; either both happen or neither does. Crash mid-batch leaves the checkpoint at the last committed position; restart resumes correctly.
-- **Retry and dead-letter handling.** If `project/2` returns `{error, Reason}`, the runtime retries with backoff. After a configurable number of failed retries, the event is moved to a dead-letter store with the error reason, and the projection continues with subsequent events (rather than blocking).
+- **Retry and dead-letter handling.** If `project/4` returns `{error, Reason}`, the runtime retries with backoff. After a configurable number of failed retries, the event is moved to a dead-letter store with the error reason, and the projection continues with subsequent events (rather than blocking).
 
 ## The Decision runtime
 
@@ -227,35 +229,60 @@ Substituting a backend means writing one module that implements the adapter beha
 The Codex has seen Divisions built without evoq. They are not bad systems. They are bigger systems, with more concepts in each slice, and harder onboarding curves for new developers (who must learn each team's homemade conventions instead of one framework's). evoq trades novelty for uniformity. The Codex recommends the trade.
 :::
 
-## The twenty-one behaviours, listed
+## The twenty-four behaviours, listed
 
-Aggregates, projections, decisions, event handlers, and process managers are the principal five. Sixteen more cover the rest of the framework's surface. The full list is below, grouped by role; full reference detail lives in the evoq documentation.
+Aggregates, projections, decisions, event handlers, and process managers are the principal five. Nineteen more cover the rest of the framework's surface. The full list is below, grouped by role; full reference detail lives in the evoq documentation.
+
+*The principal five; the slices most Divisions implement directly:*
 
 | Behaviour | Role |
 |---|---|
 | `evoq_aggregate` | The Dossier's command-handling brain |
 | `evoq_projection` | A read-model materialiser |
-| `evoq_decision` | The cross-cutting consistency primitive |
+| `evoq_decision` | The cross-cutting consistency primitive (DCB) |
 | `evoq_event_handler` | Side effects on events (notify, integrate, alert) |
-| `evoq_process_manager` | Cross-Division coordinator |
-| `evoq_state_module` | Aggregate state with pluggable persistence (rare, for very large states) |
-| `evoq_command_middleware` | Wraps the dispatch path (auth, telemetry, tracing) |
-| `evoq_idempotency_store` | Persists processed command IDs |
-| `evoq_dead_letter_handler` | Receives events that exhausted their retry budget |
-| `evoq_upcaster` | Schema evolution: old event versions → current |
-| `evoq_event_envelope_codec` | Custom envelope serialisation (rarely overridden) |
-| `evoq_snapshot_policy` | When to take snapshots (per-aggregate-type, configurable) |
-| `evoq_telemetry_handler` | Custom telemetry handlers (override the default logger) |
-| `evoq_subscription_adapter` | Subscription backend |
-| `evoq_adapter` | Event-store backend |
-| `evoq_snapshot_adapter` | Snapshot backend |
-| `evoq_checkpoint_store` | Projection checkpoint backend |
-| `evoq_passivation_policy` | When to passivate aggregates (default is time-based + memory-pressure-aware) |
-| `evoq_command_router` | Custom command routing (for sharded deployments; rarely needed) |
-| `evoq_event_validator` | Pre-append validation (rarely overridden) |
-| `evoq_schema_registry` | Schema metadata for upcaster routing |
+| `evoq_process_manager` | Cross-aggregate coordinator (the saga) |
 
-Most teams interact with five to seven behaviours per Division: aggregate, projection, decision (sometimes), event handler (sometimes), process manager (when cross-Division), plus the adapter configuration (set once, in `sys.config`). The remaining behaviours are extension points used when the defaults are not enough; schema upcasters when events evolve, command middleware for auth/tracing, dead-letter handlers for non-routine failure flows.
+*The integration actors; the mesh boundary (@sec-pipelines):*
+
+| Behaviour | Role |
+|---|---|
+| `evoq_emitter` | Publishes a domain event outward as an integration fact |
+| `evoq_listener` | Receives a fact, dispatches a local command |
+| `evoq_requester` | Sends a hope (outbound RPC), awaits feedback |
+| `evoq_responder` | Receives a hope, returns feedback |
+
+*The typed artefacts; the vocabulary the runtime moves:*
+
+| Behaviour | Role |
+|---|---|
+| `evoq_command` | A command type: intent, present tense |
+| `evoq_event` | An event type: fact, past tense |
+| `evoq_fact` | An integration fact that crosses a bounded context |
+| `evoq_hope` | An outbound RPC request between agents |
+| `evoq_feedback` | The response to a hope |
+| `evoq_state` | An aggregate's state record, folding, and serialisation |
+
+*The runtime extension points; overridden when the defaults are not enough:*
+
+| Behaviour | Role |
+|---|---|
+| `evoq_aggregate_lifespan` | Aggregate passivation / TTL strategy |
+| `evoq_middleware` | Wraps the dispatch path (auth, telemetry, tracing) |
+| `evoq_error_handler` | Handles errors during processing (retry budget, backoff) |
+| `evoq_event_upcaster` | Schema evolution: old event versions → current |
+| `evoq_read_model` | The read-model store interface (put / get / delete) |
+
+*The storage adapters; the substrate, set once in `sys.config`:*
+
+| Behaviour | Role |
+|---|---|
+| `evoq_adapter` | Event-store backend (append, read, conditional-append/DCB) |
+| `evoq_snapshot_adapter` | Snapshot store backend |
+| `evoq_subscription_adapter` | Subscription backend |
+| `evoq_checkpoint_store` | Projection checkpoint backend |
+
+Most teams interact with five to seven behaviours per Division: aggregate, projection, decision (sometimes), event handler (sometimes), process manager (when coordinating), plus the adapter configuration (set once, in `sys.config`). The remaining behaviours are extension points used when the defaults are not enough: schema upcasters (`evoq_event_upcaster`) when events evolve, middleware (`evoq_middleware`) for auth and tracing, error handlers (`evoq_error_handler`) for non-routine failure flows.
 
 ## Discipline through behaviours
 

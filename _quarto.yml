@@ -38,6 +38,8 @@ book:
         - chapters/12-antipatterns.qmd
         - chapters/13-glossary.qmd
         - chapters/colophon.qmd
+  appendices:
+    - chapters/appendix-critter-stack.qmd
 
 bibliography: references.bib
 
@@ -52,7 +54,7 @@ format:
     toc-depth: 3
   pdf:
     documentclass: scrbook
-    classoption: [oneside, openany, 11pt]
+    classoption: [oneside, openany]
     geometry:
       - paperwidth=170mm
       - paperheight=240mm

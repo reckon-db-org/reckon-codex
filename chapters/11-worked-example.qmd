@@ -41,7 +41,7 @@ A librarian acquires a new book. The Catalogue Division should record this; the 
 The Catalogue Division has a `register_book` Desk in its CMD Department. The slice:
 
 ```
-apps/cmd_catalogue/src/register_book/
+apps/manage_books/src/register_book/
 ├── register_book_v1.erl
 ├── book_registered_v1.erl
 ├── maybe_register_book.erl
@@ -160,7 +160,7 @@ The aggregate is also short. Each command type dispatches to its slice's handler
 When a book is registered, Catalogue publishes an integration fact for downstream consumers. The fact lives in a separate slice in Catalogue's PRJ Department:
 
 ```
-apps/qry_catalogue/src/book_registered_to_mesh/
+apps/query_books/src/book_registered_to_mesh/
 ├── book_registered_to_mesh.erl
 └── book_registered_to_mesh_sup.erl
 ```
@@ -172,23 +172,28 @@ The emitter subscribes to `book_registered_v1` events in Catalogue's event store
 -module(book_registered_to_mesh).
 -behaviour(evoq_event_handler).
 
--export([init/1, handle/2]).
+-export([interested_in/0, init/1, handle_event/4]).
 
-init(_Opts) ->
+interested_in() -> [<<"book_registered_v1">>].
+
+init(_Config) ->
     {ok, #{published => 0}}.
 
-handle(#evoq_envelope{event = #book_registered_v1{} = E}, State) ->
+handle_event(<<"book_registered_v1">>, #{data := Data}, _Metadata, State) ->
+    %% Translate Catalogue's internal event into the PUBLIC fact shape.
+    %% The fact's name and fields are deliberately not the event's.
     Fact = #{
-        kind         => <<"catalogue.book_loanable_v1">>,
-        book_id      => E#book_registered_v1.book_id,
-        isbn         => E#book_registered_v1.isbn,
-        title        => E#book_registered_v1.title,
-        author       => E#book_registered_v1.author,
-        loanable_at  => E#book_registered_v1.acquired_at
+        book_id     => maps:get(book_id, Data),
+        isbn        => maps:get(isbn, Data),
+        title       => maps:get(title, Data),
+        author      => maps:get(author, Data),
+        loanable_at => maps:get(acquired_at, Data)
     },
     mesh:publish(<<"catalogue.book_loanable_v1">>, Fact),
     {ok, State#{published => maps:get(published, State) + 1}}.
 ```
+
+(evoq also offers a dedicated `evoq_emitter` behaviour that splits the event-to-fact transform into an `evoq_fact` module from the publish; here the event handler does both in one place for clarity.)
 
 The fact's name (`catalogue.book_loanable_v1`) is *not* the same as the internal event's name (`book_registered_v1`). The naming difference is deliberate: the public fact says what *downstream consumers care about* (the book is now loanable); the internal event says what *Catalogue records about its own state* (the book was registered). The two are not synonymous; registering a book in Catalogue is one of several possible paths to loanable-ness; future scenarios (e.g., books transferred from another library) might also produce loanable facts without producing `book_registered_v1` internal events.
 
@@ -199,35 +204,37 @@ This is the discipline of @sec-pipelines made concrete: *domain events stay loca
 Lending's CMD Department contains a slice that consumes the integration fact and dispatches a local command:
 
 ```
-apps/cmd_lending/src/on_book_loanable_track_book/
+apps/manage_loans/src/on_book_loanable_track_book/
 ├── on_book_loanable_track_book.erl
 └── on_book_loanable_track_book_sup.erl
 ```
 
-The PM:
+The slice consumes the fact with the `evoq_listener` behaviour (@sec-pipelines): it declares the fact and transport, and `handle_fact/3` translates the fact into a local command.
 
 ```erlang
 %% on_book_loanable_track_book.erl
 -module(on_book_loanable_track_book).
--behaviour(evoq_process_manager).
+-behaviour(evoq_listener).
 
--export([init/1, handle_fact/2]).
+-export([source_fact/0, transport/0, handle_fact/3]).
 
-init([]) ->
-    mesh:subscribe(<<"catalogue.book_loanable_v1">>, self()).
+source_fact() -> <<"catalogue.book_loanable_v1">>.
+transport()   -> mesh.
 
-handle_fact(#{book_id := BookId, isbn := Isbn, title := Title,
-              author := Author, loanable_at := At}, State) ->
-    Cmd = #track_loanable_book_v1{
-        book_id     = BookId,
-        isbn        = Isbn,
-        title       = Title,
-        author      = Author,
-        loanable_at = At
+handle_fact(<<"catalogue.book_loanable_v1">>,
+            #{book_id := BookId, isbn := Isbn, title := Title,
+              author := Author, loanable_at := At}, _Metadata) ->
+    Cmd = #{
+        command_type => <<"track_loanable_book_v1">>,
+        book_id      => BookId,
+        isbn         => Isbn,
+        title        => Title,
+        author       => Author,
+        loanable_at  => At
     },
-    case cmd_lending:dispatch(Cmd) of
-        {ok, _Events}   -> {ok, State};
-        {error, Reason} -> {error, Reason, State}
+    case manage_loans:dispatch(Cmd) of
+        {ok, _Events}   -> ok;
+        {error, Reason} -> {error, Reason}
     end.
 ```
 
@@ -244,7 +251,7 @@ A Borrower wants to put a hold on a specific ISBN that the library does not curr
 This is the Decision pattern of @sec-dossiers, and the slice is `reserve_isbn`:
 
 ```
-apps/cmd_catalogue/src/reserve_isbn/
+apps/manage_books/src/reserve_isbn/
 ├── reserve_isbn.erl
 ├── isbn_reserved_v1.erl
 └── reserve_isbn_sup.erl
@@ -319,7 +326,7 @@ The first three constraints reach outside the Loan Dossier; they are facts about
 ### The slice
 
 ```
-apps/cmd_lending/src/issue_loan/
+apps/manage_loans/src/issue_loan/
 ├── issue_loan_v1.erl
 ├── loan_issued_v1.erl
 ├── maybe_issue_loan.erl
@@ -335,12 +342,10 @@ apps/cmd_lending/src/issue_loan/
 -export([steps/0]).
 
 steps() ->
-    [
-        {assert_membership_active,    #{}},
-        {load_borrower_open_loans,    #{}},
-        {load_book_loanable_status,   #{}},
-        {assert_book_not_on_loan,     #{}}
-    ].
+    [assert_membership_active,
+     load_borrower_open_loans,
+     load_book_loanable_status,
+     assert_book_not_on_loan].
 ```
 
 Four steps. Each loads or asserts one cross-entity fact. The pipeline's responsibility is to enrich the command with everything the aggregate needs to decide *purely*.
@@ -348,42 +353,41 @@ Four steps. Each loads or asserts one cross-entity fact. The pipeline's responsi
 A representative step:
 
 ```erlang
-%% load_borrower_open_loans.erl
+%% load_borrower_open_loans.erl -- a pipeline step (a plain module)
 -module(load_borrower_open_loans).
--behaviour(evoq_pipeline_step).
+-export([name/0, apply/2]).
 
--export([run/2]).
+name() -> load_borrower_open_loans.
 
-run(#{command := #issue_loan_v1{borrower_id = BorrowerId} = Cmd,
-      metadata := Meta} = Ctx, _Opts) ->
-    {ok, Count} = qry_lending:count_open_loans_for_borrower(BorrowerId),
-    Ctx#{
-        command  := Cmd,
-        metadata := Meta#{
-            borrower_open_loan_count    => Count,
-            borrower_open_loan_count_at => erlang:system_time(millisecond)
-        }
-    }.
+apply(#{borrower_id := BorrowerId} = Cmd, Ctx) ->
+    {ok, Count} = query_loans:count_open_loans_for_borrower(BorrowerId),
+    Meta = maps:get('__meta', Ctx, #{}),
+    Ctx1 = Ctx#{'__meta' => Meta#{borrower_open_loan_count_at =>
+                                      erlang:system_time(millisecond)}},
+    %% the count is data the aggregate decides on, so it enriches the command;
+    %% the read timestamp is provenance, so it goes in '__meta'.
+    {ok, Cmd#{borrower_open_loan_count => Count}, Ctx1}.
 ```
 
 The step reads a read-model. Reading a read-model outside event flow is *fine*; the prohibition is on reading inside the aggregate's `apply/2`, not on reading in pipeline steps that run before the aggregate sees the command. The pipeline runs in dedicated worker code at the slice boundary; its reads do not threaten replay.
 
 ### The handler
 
-By the time the handler runs, the command's metadata carries all the cross-entity facts:
+By the time the handler runs, the pipeline has enriched the command with all the cross-entity facts:
 
 ```erlang
 %% maybe_issue_loan.erl
 -module(maybe_issue_loan).
 -export([decide/2]).
 
-decide(#loan_state{status = none}, Ctx) ->
-    #{command := #issue_loan_v1{} = Cmd,
-      metadata := #{
-          borrower_open_loan_count := OpenCount,
-          book_loanable_status     := LoanableStatus,
-          membership_status        := MembershipStatus
-      } = Meta} = Ctx,
+decide(#loan_state{status = none}, #{
+        borrower_id              := BorrowerId,
+        book_id                  := BookId,
+        due_date                 := DueDate,
+        borrower_open_loan_count := OpenCount,
+        book_loanable_status     := LoanableStatus,
+        membership_status        := MembershipStatus
+    }) ->
     case {OpenCount, LoanableStatus, MembershipStatus} of
         {N, _, _} when N >= 5 ->
             {error, borrower_at_limit};
@@ -394,23 +398,23 @@ decide(#loan_state{status = none}, Ctx) ->
         {_, loanable, active} ->
             {ok, [#loan_issued_v1{
                 loan_id      = generate_loan_id(),
-                borrower_id  = Cmd#issue_loan_v1.borrower_id,
-                book_id      = Cmd#issue_loan_v1.book_id,
+                borrower_id  = BorrowerId,
+                book_id      = BookId,
                 issued_at    = erlang:system_time(millisecond),
-                due_date     = Cmd#issue_loan_v1.due_date,
+                due_date     = DueDate,
                 %% Cross-entity facts captured in the event
                 borrower_open_loan_count_at_issue = OpenCount,
                 book_loanable_status_at_issue     = LoanableStatus,
                 membership_status_at_issue        = MembershipStatus
             }]}
     end;
-decide(#loan_state{status = open}, _Ctx) ->
+decide(#loan_state{status = open}, _Cmd) ->
     {error, loan_already_open};
-decide(#loan_state{status = returned}, _Ctx) ->
+decide(#loan_state{status = returned}, _Cmd) ->
     {error, loan_already_concluded}.
 ```
 
-The handler is a pure function of `(state, context)`. The state comes from the Loan Dossier's history; the context contains everything else needed for the decision. The cross-entity facts are *captured in the resulting event* (`borrower_open_loan_count_at_issue`, `book_loanable_status_at_issue`, `membership_status_at_issue`) so a future replay sees not just the action but the facts that justified it.
+The handler is a pure function of `(state, command)`. The state comes from the Loan Dossier's history; the enriched command carries everything else needed for the decision. The cross-entity facts are *captured in the resulting event* (`borrower_open_loan_count_at_issue`, `book_loanable_status_at_issue`, `membership_status_at_issue`) so a future replay sees not just the action but the facts that justified it.
 
 If the Borrower files a complaint six months later that they were over-the-limit when this loan was issued, an investigator can replay the Loan Dossier and *see what the system knew*. The decision is auditable not just for *what was decided* but *why it was decided that way*.
 
@@ -509,7 +513,7 @@ The gateway routes the requests to the Catalogue cluster, which runs the same `a
 | Integration transports (@sec-pipelines) | Mesh facts between Divisions; pg inside |
 | The Reckon Cycle (@sec-cycle) | The example's own walking-skeleton then iterative build |
 | reckon-db primitives (@sec-reckon-db) | Stream appends; DCB conditional appends |
-| evoq behaviours (@sec-evoq) | Aggregate, decision, event handler, process manager, pipeline step |
+| evoq behaviours (@sec-evoq) | Aggregate, decision, event handler, listener; the pipeline is plain modules |
 | Gateway + polyglot (@sec-gateway) | The Go kiosk client |
 
 Every load-bearing pattern in the book has a place in this example. If a pattern is missing from the listing, it is not essential for the kinds of systems the book is about.
