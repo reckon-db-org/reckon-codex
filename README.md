@@ -2,11 +2,11 @@
 
 **No Nonsense Event Sourcing.**
 
-The opinionated book that ships with the [reckon](https://codeberg.org/reckon-db-org) stack: *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*, *reckon-go*, *reckon-dotnet*.
+The opinionated book that ships with the [reckon](https://github.com/reckon-db-org) stack: *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*, *reckon-go*, *reckon-dotnet*.
 
 ## Reading
 
-The book is published as a PDF on the [releases page](https://codeberg.org/reckon-db-org/reckon-codex/releases) and as a browsable HTML site (link to follow). The PDF is the canonical form.
+The book is published as a PDF on the [releases page](https://github.com/reckon-db-org/reckon-codex/releases) and as a browsable HTML site (link to follow). The PDF is the canonical form.
 
 ## Status
 
@@ -54,7 +54,7 @@ quarto install tinytex
 
 ## Building in CI
 
-Every push to `main` triggers `.github/workflows/build.yml` (via the Codeberg → GitHub push-mirror). The workflow:
+Every push to `main` triggers `.github/workflows/build.yml`. The workflow:
 
 1. Sets up Quarto and tinytex.
 2. Renders to PDF + HTML.
@@ -74,9 +74,9 @@ See [`LICENSE`](LICENSE) for the top-level summary.
 
 ## Related
 
-- [reckon-db](https://codeberg.org/reckon-db-org/reckon-db) — the event store
-- [evoq](https://codeberg.org/reckon-db-org/evoq) — the CQRS/ES framework
-- [reckon-gateway](https://codeberg.org/reckon-db-org/reckon-gateway) — the gRPC ingress
-- [reckon-proto](https://codeberg.org/reckon-db-org/reckon-proto) — the canonical wire contract
-- [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) — idiomatic Go client
-- [reckon-dotnet](https://codeberg.org/reckon-db-org/reckon-dotnet) — idiomatic .NET client
+- [reckon-db](https://github.com/reckon-db-org/reckon-db) — the event store
+- [evoq](https://github.com/reckon-db-org/evoq) — the CQRS/ES framework
+- [reckon-gateway](https://github.com/reckon-db-org/reckon-gateway) — the gRPC ingress
+- [reckon-proto](https://github.com/reckon-db-org/reckon-proto) — the canonical wire contract
+- [reckon-go](https://github.com/reckon-db-org/reckon-go) — idiomatic Go client
+- [reckon-dotnet](https://github.com/reckon-db-org/reckon-dotnet) — idiomatic .NET client

@@ -9,7 +9,7 @@ book:
   date: today
   date-format: "MMMM YYYY"
   search: true
-  repo-url: "https://codeberg.org/reckon-db-org/reckon-codex"
+  repo-url: "https://github.com/reckon-db-org/reckon-codex"
   repo-actions: [edit, issue]
   downloads: [pdf]
   sidebar:

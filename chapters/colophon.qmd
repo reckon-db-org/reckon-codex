@@ -1,6 +1,6 @@
 # Colophon {.unnumbered}
 
-This book was written in Quarto, typeset with KOMA-Script's `scrbook`, and built from Markdown sources versioned on Codeberg.
+This book was written in Quarto, typeset with KOMA-Script's `scrbook`, and built from Markdown sources versioned on GitHub.
 
 The patterns documented here were first systematised inside a private agent runtime, where the *reckon-db*, *evoq*, *reckon-gateway*, *reckon-proto*, and *reckon-go* libraries grew up together. The libraries are open-source under Apache-2.0. This Codex distills the practice that shaped them. Both will outlive the runtime that birthed them.
 
@@ -20,4 +20,4 @@ The PDF is built to A5-ish dimensions (170×240mm) to read comfortably on a tabl
 
 ## Errata and contributions
 
-Issues, errata, and pull requests at <https://codeberg.org/reckon-db-org/reckon-codex>. The Codex evolves with the stack; substantive changes ship as numbered revisions.
+Issues, errata, and pull requests at <https://github.com/reckon-db-org/reckon-codex>. The Codex evolves with the stack; substantive changes ship as numbered revisions.
